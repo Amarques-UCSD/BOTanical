@@ -103,6 +103,15 @@ float exp_moist = 1000; // threshold for moisture
 float avg_light = 0;
 float past_average = exp_light; // so its not on at start
 float cur_cycle = 0;
+
+// variables for menu
+int menu_sizes[] = {6,1,4,1,2,3,1};
+int menu_pointer = 0;
+int cur_state = 0;
+int menu_len = menu_sizes[cur_state];
+int pointer_blink = 0;
+
+// variables for the buttons
 int last1 = LOW;
 int cur1 = LOW;
 int last2 = LOW;
@@ -141,13 +150,25 @@ void setup() {  // put your setup code here, to run once:
   display.clearDisplay();
 
   // initiate bme280
-  if (!bme.begin(0x77)) {
+/*  if (!bme.begin(0x77)) {
     Serial.println("Could not find a valid BME280 sensor, check wiring!");
     while (1);
-  }
+  }*/
 }
 
 void loop() { // put your main code here, to run repeatedly:
+  time_t now;
+  char strftime_buf[64];
+  struct tm timeinfo;
+
+  time(&now);
+  // Set time start to 00:00:00 Jan 1st, 1970
+  setenv("TZ", "UTC-0", 1);
+  tzset();
+  localtime_r(&now, &timeinfo);
+  strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+  //Serial.println(strftime_buf);
+
   // buttons will be LOW(0) or HIGH(1)
   cur1 = digitalRead(BUTTON1); 
   cur2 = digitalRead(BUTTON2);
@@ -156,12 +177,32 @@ void loop() { // put your main code here, to run repeatedly:
   int pressed1 = LOW;
   int pressed2 = LOW;
   int pressed3 = LOW; 
-  if(last1 == LOW && cur1 == HIGH)
+  if(last1 == LOW && cur1 == HIGH) {
     int pressed1 = HIGH;  // Button 1 was just pressed
-  if(last2 == LOW && cur2 == HIGH)
+    Serial.println("Button 1 pressed");
+    
+    if (menu_pointer == menu_len-1) {
+      menu_pointer = menu_len-1;  // already at the bottom
+    } else {
+      menu_pointer++;
+    }
+  }
+  if(last2 == LOW && cur2 == HIGH) {
     int pressed2 = HIGH;  // Button 2 was just pressed
-  if(last3 == LOW && cur3 == HIGH)
-    int pressed3 = HIGH;  // Button 3 was just pressed 
+    Serial.println("Button 2 pressed");
+
+    if (menu_pointer == 0) {
+      menu_pointer = 0;  // already at the top
+    } else {
+      menu_pointer--;
+    }
+  }
+  if(last3 == LOW && cur3 == HIGH) {
+    int pressed3 = HIGH;  // Button 3 was just pressed
+    Serial.println("Button 3 pressed");
+
+    change_menu();    
+  } 
   last1 = cur1;
   last2 = cur2;
   last3 = cur3;
@@ -212,16 +253,43 @@ void loop() { // put your main code here, to run repeatedly:
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(WHITE);
-  display.setCursor(0, 10);
-  // Display static text
-  display.print("Light value = ");
-  display.println((int) light_reading);
-  display.print("Avg value = ");
-  display.println((int) avg_light);
-  display.print("Cycle = ");
-  display.println((int) cur_cycle);
-  display.print("C_expected = ");
-  display.println(exp_light  * cur_cycle/cycle_length);
+  
+  // show time
+  display.setCursor(75, 0);  
+  strftime_buf[19] = '\0';
+  display.println(&strftime_buf[11]);
+  display.drawRect(73, -10, 100, 20, WHITE);
+
+  switch(cur_state) {
+    case 0:
+      menu_display(); 
+      break;
+    case 1:
+      overview_display(light_reading);
+      break;   
+    case 2:
+      sensors_display();
+      break;      
+    case 3:
+      notifications_display();
+      break;      
+    case 4:
+      water_display();
+      break;         
+    case 5:
+      plant_display();
+      break;      
+    case 6:
+      credit_display();
+      break;      
+    default:  // show logo and back to menu if not coded or an error occurs
+      display.drawBitmap(0, 0, BOTanical_logo, 128, 64, 1);
+      cur_state = 0;
+      break;             
+  }
+  
+  menu_len = menu_sizes[cur_state];
+  Serial.printf("State = %d , menu_size = %d , pointer = %d\n", cur_state, menu_len, menu_pointer);
 
   if (past_average < exp_light && avg_light < exp_light * cur_cycle/cycle_length) {  // less light then currently expected
     digitalWrite(LED, HIGH);
@@ -243,5 +311,84 @@ void loop() { // put your main code here, to run repeatedly:
     avg_light = 0;    
   }
 
-  delay(2000); // set up a delay of 2s
+  delay(1000); // set up a delay of 1s
+}
+
+void menu_display(){
+  // show menu
+  char* menu_text[menu_len] = {"Overview", "Sensor Readings", "Notifications", "Already Watered", "Select Plant", "Credits" };
+  for (int i = 0; i < menu_len; i++) {
+    display.setCursor(15, 5+10*i);
+    display.println(menu_text[i]);      
+  }    
+  // Draw pointer
+  if (pointer_blink == 0) {
+    display.drawCircle(7, 8+10*menu_pointer, 2, WHITE);
+    pointer_blink = 1;
+  } else {
+    display.fillCircle(7, 8+10*menu_pointer, 2, WHITE);
+    pointer_blink = 0;
+  }  
+}
+
+void overview_display(float light_reading){
+  // Display static text
+  display.setCursor(0, 20);
+  display.print("Light value = ");
+  display.println((int) light_reading);
+  display.print("Avg value = ");
+  display.println((int) avg_light);
+  display.print("Cycle = ");
+  display.println((int) cur_cycle);
+  display.print("C_expected = ");
+  display.println(exp_light  * cur_cycle/cycle_length);
+}
+
+void sensors_display() {
+  // Display static text
+  display.setCursor(0, 20);
+  display.println("Light sensor");
+}
+
+void notifications_display(){
+  // Display static text
+  display.setCursor(0, 20);
+  display.println("Notifications:");
+}
+ 
+void water_display() {
+  // Display static text
+  display.setCursor(0, 20);
+  display.println("Have you watered the plant today?\n  Yes\n  No");
+}
+  
+void plant_display(){
+  // Display static text
+  display.setCursor(0, 20);
+  display.println("Choose plant you have.");
+}
+
+void credit_display() {
+  // Display static text
+  display.setCursor(0, 20);
+  display.println("Made by:\n  Alexandre Marques\n  Snir Kinog\n  Sahil Singh");
+}      
+
+void change_menu() {
+  switch(cur_state) {
+    case 0:
+      cur_state = 1+menu_pointer;
+      break;
+    case 1:
+      cur_state = 0;
+      break;  
+    case 6:
+      cur_state = -1;
+      break;      
+    default:  // go to invalid state
+      cur_state = -1;
+      break;             
+  }
+
+  menu_pointer = 0;
 }
