@@ -1,6 +1,7 @@
 # BOTanical
 
 |List of States:			|Pointer_max:	|Next state:|
+|---------------------|-------------|-----------|
 |				|(default 1)	|
 -1 = ERROR			|		|0
 0.	Main menu		|6		|pointer+1 (goes to 1~6)
