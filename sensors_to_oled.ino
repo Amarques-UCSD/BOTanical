@@ -103,21 +103,22 @@ float exp_moist = 1000; // threshold for moisture
 float avg_light = 0;
 float past_average = exp_light; // so its not on at start
 float cur_cycle = 0;
+int already_watered = LOW;
 
 // variables for menu
-int menu_sizes[] = {6,1,4,1,2,3,1};
+int menu_sizes[] = {6,1,5,1,2,10,1,1,1,1,1,2,1,1,2};
 int menu_pointer = 0;
 int cur_state = 0;
 int menu_len = menu_sizes[cur_state];
 int pointer_blink = 0;
 
 // variables for the buttons
-int last1 = LOW;
-int cur1 = LOW;
-int last2 = LOW;
-int cur2 = LOW;
-int last3 = LOW;
-int cur3 = LOW;
+int last1 = HIGH;
+int cur1 = HIGH;
+int last2 = HIGH;
+int cur2 = HIGH;
+int last3 = HIGH;
+int cur3 = HIGH;
 
 void setup() {  // put your setup code here, to run once:
   Serial.begin(115200);
@@ -182,7 +183,7 @@ void loop() { // put your main code here, to run repeatedly:
     Serial.println("Button 1 pressed");
     
     if (menu_pointer == menu_len-1) {
-      menu_pointer = menu_len-1;  // already at the bottom
+      menu_pointer = 0;  // already at the bottom, go to top
     } else {
       menu_pointer++;
     }
@@ -191,8 +192,8 @@ void loop() { // put your main code here, to run repeatedly:
     int pressed2 = HIGH;  // Button 2 was just pressed
     Serial.println("Button 2 pressed");
 
-    if (menu_pointer == 0) {
-      menu_pointer = 0;  // already at the top
+    if (menu_pointer == 0) { 
+      menu_pointer = menu_len-1;  // already at the top, go to bottom        
     } else {
       menu_pointer--;
     }
@@ -282,6 +283,18 @@ void loop() { // put your main code here, to run repeatedly:
     case 6:
       credit_display();
       break;      
+    case 7:
+      light_data(light_reading);
+      break;           
+    case 8:
+      moist_data(light_reading);
+      break;      
+    case 9:
+      temp_data(light_reading);
+      break;      
+    case 10:
+      humid_data(light_reading);
+      break;       
     default:  // show logo and back to menu if not coded or an error occurs
       display.drawBitmap(0, 0, BOTanical_logo, 128, 64, 1);
       cur_state = 0;
@@ -346,8 +359,23 @@ void overview_display(float light_reading){
 
 void sensors_display() {
   // Display static text
-  display.setCursor(0, 20);
-  display.println("Light sensor");
+  display.setCursor(0, 0);
+  display.println("Options:");
+
+  // show menu
+  char* menu_text[menu_len] = {"Light Sensor", "Moisture Sensor", "Temperature sensor", "Humidity sensor", "Back"};
+  for (int i = 0; i < menu_len; i++) {
+    display.setCursor(15, 15+10*i);
+    display.println(menu_text[i]);      
+  }    
+  // Draw pointer
+  if (pointer_blink == 0) {
+    display.drawCircle(7, 18+10*menu_pointer, 2, WHITE);
+    pointer_blink = 1;
+  } else {
+    display.fillCircle(7, 18+10*menu_pointer, 2, WHITE);
+    pointer_blink = 0;
+  }  
 }
 
 void notifications_display(){
@@ -358,21 +386,104 @@ void notifications_display(){
  
 void water_display() {
   // Display static text
-  display.setCursor(0, 20);
-  display.println("Have you watered the plant today?\n  Yes\n  No");
+  display.setCursor(0, 17);
+  display.println("Have you watered the plant today?");
+  display.setCursor(15, 40);
+  display.println("Yes (skip cycle)");
+  display.setCursor(15, 50);
+  display.println("No");
+  
+  // Draw pointer
+  if (pointer_blink == 0) {
+    display.drawCircle(7, 43+10*menu_pointer, 2, WHITE);
+    pointer_blink = 1;
+  } else {
+    display.fillCircle(7, 43+10*menu_pointer, 2, WHITE);
+    pointer_blink = 0;
+  } 
 }
   
 void plant_display(){
   // Display static text
-  display.setCursor(0, 20);
-  display.println("Choose plant you have.");
+  display.setCursor(0, 0);
+  display.println("Choose from:");
+  display.drawRect(1, 15, 126, 48, WHITE);
+  
+  // show scrolling menu
+  char* menu_text[menu_len] = {"Back", "Plant 1", "Plant 2", "Plant 3", "Plant 4", "Plant 5", "Plant 6", "Plant 7", "Plant 8", "Plant 9"};
+  for (int i = 0; i < 4; i++) { 
+    display.setCursor(15, 20+10*i);
+    display.println(menu_text[(menu_len + menu_pointer+i-1) % menu_len]);      
+  }    
+  // Draw pointer
+  if (pointer_blink == 0) {
+    display.drawCircle(7, 33, 2, WHITE);
+    pointer_blink = 1;
+  } else {
+    display.fillCircle(7, 33, 2, WHITE);
+    pointer_blink = 0;
+  }  
 }
 
 void credit_display() {
   // Display static text
-  display.setCursor(0, 20);
+  display.setCursor(0, 15);
   display.println("Made by:\n  Alexandre Marques\n  Snir Kinog\n  Sahil Singh");
+  display.setCursor(0, 52);  
+  display.println("ECE 196 WI23");
 }      
+
+void light_data(float light_reading) {
+  // Display static text
+  display.setCursor(0, 20);
+  display.print("Light value = ");
+  display.println((int) light_reading);
+  display.print("Avg value = ");
+  display.println((int) avg_light);
+  display.print("Cycle = ");
+  display.println((int) cur_cycle);
+  display.print("C_expected = ");
+  display.println(exp_light  * cur_cycle/cycle_length);  
+}
+
+void moist_data(float light_reading) {
+  // Display static text
+  display.setCursor(0, 20);
+  display.print("Moisture value = ");
+  display.println((int) light_reading);
+  display.print("Avg value = ");
+  display.println((int) avg_light);
+  display.print("Cycle = ");
+  display.println((int) cur_cycle);
+  display.print("C_expected = ");
+  display.println(exp_light  * cur_cycle/cycle_length);  
+}
+
+void temp_data(float light_reading) {
+  // Display static text
+  display.setCursor(0, 20);
+  display.print("Temperature value = ");
+  display.println((int) light_reading);
+  display.print("Avg value = ");
+  display.println((int) avg_light);
+  display.print("Cycle = ");
+  display.println((int) cur_cycle);
+  display.print("C_expected = ");
+  display.println(exp_light  * cur_cycle/cycle_length);  
+}
+
+void humid_data(float light_reading) {
+  // Display static text
+  display.setCursor(0, 20);
+  display.print("Humidity value = ");
+  display.println((int) light_reading);
+  display.print("Avg value = ");
+  display.println((int) avg_light);
+  display.print("Cycle = ");
+  display.println((int) cur_cycle);
+  display.print("C_expected = ");
+  display.println(exp_light  * cur_cycle/cycle_length);  
+}
 
 void change_menu() {
   switch(cur_state) {
@@ -381,10 +492,28 @@ void change_menu() {
       break;
     case 1:
       cur_state = 0;
-      break;  
+      break;
+    case 2:
+      if (menu_pointer == 4) {
+        cur_state = 0;
+      } else {
+        cur_state = 7+menu_pointer;        
+      }
+      break;
+    case 3:
+      cur_state = 11;  
+    case 4:
+      cur_state = 0;
+      break;
     case 6:
       cur_state = -1;
-      break;      
+      break;
+    case 7:
+    case 8:
+    case 9:
+    case 10:
+      cur_state = 2;
+      break;
     default:  // go to invalid state
       cur_state = -1;
       break;             
