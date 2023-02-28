@@ -28,7 +28,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 Adafruit_BME280 bme; // I2C
 
 
-static const unsigned char PROGMEM BOTanical_logo[] = {
+static const unsigned char PROGMEM BOTanical_logo[] = { // bitmap variable
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
@@ -95,10 +95,24 @@ static const unsigned char PROGMEM BOTanical_logo[] = {
 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
 };
 
+// variables to store readings
+float light_reading = 0;
+float moist_reading = 0;
+float temp_reading = 0;
+float press_reading = 0;
+float height_reading = 0;
+float humid_reading = 0;
+float water_level = 0;
+
 
 // variables for calculation
-float cycle_length = 30; //30 * 2s delay = 1min cycle
-float cur_cycle = 0;
+int cycle_length = 24; //24 * 5s delay = 2min cycle
+int cur_unit = 0;      // for determining when to take readings
+int cur_cycle = 0;     // for the set of readings
+int unit_time = 100;  
+int sensor_sleep = 5000;
+float unit_length = sensor_sleep / unit_time; // when to read? = 50
+unsigned long previous_millis = 2000;
 
 float exp_light = 1000; // expected light over a cycle
 float exp_moist = 1000; // threshold for moisture
@@ -178,7 +192,8 @@ void loop() { // put your main code here, to run repeatedly:
   tzset();
   localtime_r(&now, &timeinfo);
   strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
-  //Serial.println(strftime_buf);
+
+  //Serial.printf("State = %d , menu_size = %d , pointer = %d\n", cur_state, menu_len, menu_pointer); // for tracking the state
 
   // buttons will be LOW(0) or HIGH(1)
   cur1 = digitalRead(BUTTON1); 
@@ -218,34 +233,6 @@ void loop() { // put your main code here, to run repeatedly:
   last2 = cur2;
   last3 = cur3;
 
-
-  //Read light level
-  float light_reading = analogRead(LIGHTSENSORPIN);
-
-  // Water level sensor
-  digitalWrite(WATERPOWER, HIGH);  // turn the sensor ON
-  delay(10);                      // wait 10 milliseconds
-  float water_level = analogRead(WATERPIN); // read the analog value from sensor
-  digitalWrite(WATERPOWER, LOW);   // turn the sensor OFF
-
-  // Moisture sensor
-  float moist_reading = analogRead(SOILPIN); // read the analog value from sensor
-
-  // BME280 readings (works for both I2C and SPI)
-/*  float temp_reading = bme.readTemperature();
-  float press_reading = bme.readPressure();
-  float height_reading = bme.readAltitude(SEALEVELPRESSURE_HPA);
-  float humid_reading = bme.readHumidity();*/
-
-
-  // Calculate averages
-  avg_light += light_reading/cycle_length;
-  avg_moist += moist_reading/cycle_length;
-  //avg_temp += temp_reading/cycle_length;
-  //avg_humid += humid_reading/cycle_length;  
-  cur_cycle++;  // increment cycle as calculations are done
-
-
   //  Code for OLED
   display.clearDisplay();
   display.setTextSize(1);
@@ -253,7 +240,7 @@ void loop() { // put your main code here, to run repeatedly:
   
   // show time
   display.setCursor(75, 0);  
-  strftime_buf[19] = '\0';
+  strftime_buf[19] = '\0';  // make sure to only print hh:mm:ss
   display.println(&strftime_buf[11]);
   display.drawRect(73, -10, 100, 20, WHITE);
 
@@ -262,7 +249,7 @@ void loop() { // put your main code here, to run repeatedly:
       menu_display(); 
       break;
     case 1:
-      overview_display(light_reading);
+      overview_display();
       break;   
     case 2:
       sensors_display();
@@ -280,16 +267,16 @@ void loop() { // put your main code here, to run repeatedly:
       credit_display();
       break;      
     case 7:
-      light_data(light_reading);
+      light_data();
       break;           
     case 8:
-      moist_data(moist_reading);
+      moist_data();
       break;      
     case 9:
-      temp_data(light_reading); // need to change when bme connected
+      temp_data(); // need to change when bme connected
       break;      
     case 10:
-      humid_data(light_reading);
+      humid_data();
       break;       
     default:  // show logo and back to menu if not coded or an error occurs
       display.drawBitmap(0, 0, BOTanical_logo, 128, 64, 1);
@@ -297,8 +284,7 @@ void loop() { // put your main code here, to run repeatedly:
       break;             
   }
   
-  menu_len = menu_sizes[cur_state];
-  Serial.printf("State = %d , menu_size = %d , pointer = %d\n", cur_state, menu_len, menu_pointer); // for tracking the state
+  menu_len = menu_sizes[cur_state]; 
 
   if (past_light < exp_light && avg_light < exp_light * cur_cycle/cycle_length) {  // less light then currently expected
     digitalWrite(LED, HIGH);
@@ -314,6 +300,20 @@ void loop() { // put your main code here, to run repeatedly:
   }
   display.display();
 
+  if (cur_unit == unit_length) {  // take readings
+    sensor_readings();
+    //delay(unit_time - 10);  // sensor has a 10ms delay
+    cur_unit = 1;  
+  } else {
+    //delay(unit_time);
+    cur_unit++;
+  }
+  unsigned long millis_now = millis();
+  Serial.printf("Previous = %d | now = %d | delay %d |", previous_millis, millis_now, unit_time - (millis_now - previous_millis));
+  delay(unit_time - (millis_now - previous_millis));
+  previous_millis = millis();  
+  Serial.printf("after: %d | %s | unit = %d , cycle = %d\n", millis(), strftime_buf, cur_unit, cur_cycle); 
+
   if (cur_cycle == cycle_length) { // reset cycle
     cur_cycle = 0;
     
@@ -326,8 +326,34 @@ void loop() { // put your main code here, to run repeatedly:
     avg_temp = 0;
     avg_humid = 0;
   }
+}
 
-  delay(1000); // set up a delay of 1s
+void sensor_readings() {
+  //Read light level
+  light_reading = analogRead(LIGHTSENSORPIN);
+
+  // Water level sensor
+  digitalWrite(WATERPOWER, HIGH);  // turn the sensor ON
+  delay(10);                      // wait 10 milliseconds
+  water_level = analogRead(WATERPIN); // read the analog value from sensor
+  digitalWrite(WATERPOWER, LOW);   // turn the sensor OFF
+
+  // Moisture sensor
+  moist_reading = analogRead(SOILPIN); // read the analog value from sensor
+
+  // BME280 readings (works for both I2C and SPI)
+/*  temp_reading = bme.readTemperature();
+  press_reading = bme.readPressure();
+  height_reading = bme.readAltitude(SEALEVELPRESSURE_HPA);
+  humid_reading = bme.readHumidity();*/
+
+
+  // Calculate averages
+  avg_light += light_reading/cycle_length;
+  avg_moist += moist_reading/cycle_length;
+  //avg_temp += temp_reading/cycle_length;
+  //avg_humid += humid_reading/cycle_length;  
+  cur_cycle++;  // increment cycle as calculations are done
 }
 
 void menu_display(){
@@ -337,17 +363,21 @@ void menu_display(){
     display.setCursor(15, 5+10*i);
     display.println(menu_text[i]);      
   }    
-  // Draw pointer
+  // Draw pointer  
   if (pointer_blink == 0) {
     display.drawCircle(7, 8+10*menu_pointer, 2, WHITE);
-    pointer_blink = 1;
+    if (cur_unit % 5 == 0) {
+      pointer_blink = 1;
+    }
   } else {
     display.fillCircle(7, 8+10*menu_pointer, 2, WHITE);
-    pointer_blink = 0;
+    if (cur_unit % 5 == 0) {
+      pointer_blink = 0;
+    }
   }  
 }
 
-void overview_display(float light_reading){
+void overview_display(){
   // Display static text
   display.setCursor(0, 20);
   display.print("Light value = ");
@@ -374,10 +404,14 @@ void sensors_display() {
   // Draw pointer
   if (pointer_blink == 0) {
     display.drawCircle(7, 18+10*menu_pointer, 2, WHITE);
-    pointer_blink = 1;
+    if (cur_unit % 5 == 0) {
+      pointer_blink = 1;
+    }
   } else {
     display.fillCircle(7, 18+10*menu_pointer, 2, WHITE);
-    pointer_blink = 0;
+    if (cur_unit % 5 == 0) {
+      pointer_blink = 0;
+    }
   }  
 }
 
@@ -399,10 +433,14 @@ void water_display() {
   // Draw pointer
   if (pointer_blink == 0) {
     display.drawCircle(7, 43+10*menu_pointer, 2, WHITE);
-    pointer_blink = 1;
+    if (cur_unit % 5 == 0) {
+      pointer_blink = 1;
+    }
   } else {
     display.fillCircle(7, 43+10*menu_pointer, 2, WHITE);
-    pointer_blink = 0;
+    if (cur_unit % 5 == 0) {
+      pointer_blink = 0;
+    }
   } 
 }
   
@@ -421,10 +459,14 @@ void plant_display(){
   // Draw pointer
   if (pointer_blink == 0) {
     display.drawCircle(7, 33, 2, WHITE);
-    pointer_blink = 1;
+    if (cur_unit % 5 == 0) {
+      pointer_blink = 1;
+    }
   } else {
     display.fillCircle(7, 33, 2, WHITE);
-    pointer_blink = 0;
+    if (cur_unit % 5 == 0) {
+      pointer_blink = 0;
+    }
   }  
 
   // Draw scrolling bar
@@ -442,7 +484,7 @@ void credit_display() {
   display.println("ECE 196 WI23");
 }      
 
-void light_data(float light_reading) {
+void light_data() {
   // Display static text
   display.setCursor(0, 20);
   display.print("Light value = ");
@@ -455,7 +497,7 @@ void light_data(float light_reading) {
   display.println(exp_light  * cur_cycle/cycle_length);  
 }
 
-void moist_data(float moist_reading) {
+void moist_data() {
   // Display static text
   display.setCursor(0, 20);
   display.print("Moisture value = ");
@@ -468,7 +510,7 @@ void moist_data(float moist_reading) {
   display.println(exp_moist  * cur_cycle/cycle_length);  
 }
 
-void temp_data(float temp_reading) {
+void temp_data() {
   // Display static text
   display.setCursor(0, 20);
   display.print("Temperature value = ");
@@ -481,15 +523,16 @@ void temp_data(float temp_reading) {
   display.println(exp_temp  * cur_cycle/cycle_length);  
 }
 
-void humid_data(float humid_reading) {
+void humid_data() {
   // Display static text
   display.setCursor(0, 20);
   display.print("Humidity value = ");
   display.println((int) humid_reading);
   display.print("Avg value = ");
   display.println((int) avg_humid);
-  display.print("Cycle = ");
-  display.println((int) cur_cycle);
+  display.printf("Cycle = %d / %d\n", cur_cycle, cycle_length);
+//  display.print("Cycle = ");
+//  display.println((int) cur_cycle);
   display.print("C_expected = ");
   display.println(exp_humid  * cur_cycle/cycle_length);  
 }
