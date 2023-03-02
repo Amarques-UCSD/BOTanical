@@ -1,5 +1,6 @@
 #include <string>
 
+// (source: https://sustainablecampus.unimelb.edu.au/__data/assets/pdf_file/0005/2839190/Indoor-plant-workshop-Light-and-Moisture-Requirements.pdf)
 
 // WATER
 // 1: Dry: Does not need very much water and can stand low humidity. 
