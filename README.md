@@ -1,8 +1,8 @@
 # BOTanical
 
-|List of States:			|Pointer_max:	|Next state:|
+|List of States:			|Options:	|Next state:|
 |---------------------|-------------|-----------|
-|				              |(default 1)	|
+|				              |(default 1)	|pointer starts at 0|
 |-1 = ERROR			|		|0|
 |0.	Main menu		|6		|pointer+1 (goes to 1~6)|
 |1.	Overview		|		|0|
