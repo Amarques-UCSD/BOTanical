@@ -9,7 +9,7 @@
 |2.	Sensor Readings		|5		|if pointer == 4 -> 0 ; else pointer+7 (goes to 7~10)|
 |3.	Notifications		|		|11|
 |4.	Already Watered		|2		|pointer+12
-|5.	Select Plant		|TODO		|14|
+|5.	Select Plant		|10		|14|
 |6.	Credits			|		|-1|
 |7.	Light sensor		|		|2|
 |8.	Moisture sensor		|		|2|
