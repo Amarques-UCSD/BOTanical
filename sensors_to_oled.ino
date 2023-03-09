@@ -21,7 +21,7 @@
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-Adafruit_SSD1306 display(SCREEN_WIDTH, 32, &Wire);
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // Create BME280 object
 #define SEALEVELPRESSURE_HPA (1013.25)
@@ -106,13 +106,13 @@ float water_level = 0;
 
 
 // variables for calculation
-int cycle_length = 24; //24 * 5s delay = 2min cycle
+int cycle_length = 4*24; // 24 * 4*15min delay = 1 day cycle
 int cur_unit = 0;      // for determining when to take readings
 int cur_cycle = 0;     // for the set of readings
-int unit_time = 100;  
-int sensor_sleep = 5000;
+int unit_time = 100;   // 0.1s for cycles (good input responsitivity)
+int sensor_sleep = 15*60*1000;  // 15 minutes -> ms
 float unit_length = sensor_sleep / unit_time; // when to read? = 50
-unsigned long previous_millis = 2000;
+unsigned long previous_millis = 2000; // 2s of setup
 int error_cycle = 0;
 
 float exp_light = 1000; // expected light over a cycle
@@ -171,17 +171,21 @@ void setup() {  // put your setup code here, to run once:
   display.clearDisplay();
   display.drawBitmap(0, 0, BOTanical_logo, 128, 64, 1);
   display.display();
-  delay(2000); // Pause for 2 seconds, let OLED boot up
-
-  // Clear the buffer
-  display.clearDisplay();
+  delay(1000 - millis());
+  display.clearDisplay(); // needs to be here or else crash
+  //display.display();
 
   // initiate bme280
- bool status = bme.begin(0x77);
- if (!status){//bme.begin(0x77)) {
+  bool status = bme.begin(0x77);
+  if (!status){//bme.begin(0x77)) {
     Serial.println("Could not find a valid BME280 sensor, check wiring!");
     while (1);
   }
+
+  delay(2000 - millis()); // Pause for total 2 seconds, let OLED and bme boot up
+
+  // Clear the buffer
+  display.clearDisplay();
 }
 
 void loop() { // put your main code here, to run repeatedly:
@@ -310,7 +314,7 @@ void loop() { // put your main code here, to run repeatedly:
   }
   display.display();
 
-  if (cur_unit == unit_length) {  // take readings
+  if (cur_unit == unit_length || cur_unit == 0) {  // take readings
     sensor_readings();
     //delay(unit_time - 10);  // sensor has a 10ms delay
     cur_unit = 1;  
@@ -319,10 +323,10 @@ void loop() { // put your main code here, to run repeatedly:
     cur_unit++;
   }
   unsigned long millis_now = millis();
-  Serial.printf("Previous = %d | now = %d | delay %d |", previous_millis, millis_now, unit_time - (millis_now - previous_millis));
+  //Serial.printf("Previous = %d | now = %d | delay %d |", previous_millis, millis_now, unit_time - (millis_now - previous_millis));
   delay(unit_time - (millis_now - previous_millis));
   previous_millis = millis();  
-  Serial.printf("after: %d | %s | unit = %d , cycle = %d\n", millis(), strftime_buf, cur_unit, cur_cycle); 
+  //Serial.printf("after: %d | %s | unit = %d , cycle = %d\n", millis(), strftime_buf, cur_unit, cur_cycle); 
 
   if (cur_cycle == cycle_length) { // reset cycle
     cur_cycle = 0;
@@ -551,6 +555,19 @@ void plant_change() {
   display.print("Confirm");
   display.setCursor(75, 50);
   display.print("Cancel");
+
+  // Draw pointer
+  if (pointer_blink == 0) {
+    display.drawCircle(7 + 60*menu_pointer, 53, 2, WHITE);
+    if (cur_unit % 5 == 0) {
+      pointer_blink = 1;
+    }
+  } else {
+    display.fillCircle(7 + 60*menu_pointer, 53, 2, WHITE);
+    if (cur_unit % 5 == 0) {
+      pointer_blink = 0;
+    }
+  }  
 }
 
 void change_menu() {
