@@ -21,7 +21,7 @@
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 #define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+Adafruit_SSD1306 display(SCREEN_WIDTH, 32, &Wire);
 
 // Create BME280 object
 #define SEALEVELPRESSURE_HPA (1013.25)
@@ -113,6 +113,7 @@ int unit_time = 100;
 int sensor_sleep = 5000;
 float unit_length = sensor_sleep / unit_time; // when to read? = 50
 unsigned long previous_millis = 2000;
+int error_cycle = 0;
 
 float exp_light = 1000; // expected light over a cycle
 float exp_moist = 1000; // threshold for moisture
@@ -133,6 +134,7 @@ int already_watered = LOW;
 int menu_sizes[] = {6,1,5,1,2,10,1,1,1,1,1,2,1,1,2};
 int menu_pointer = 0;
 int cur_state = 0;
+int next_state = 0;
 int menu_len = menu_sizes[cur_state];
 int pointer_blink = 0;
 
@@ -175,10 +177,11 @@ void setup() {  // put your setup code here, to run once:
   display.clearDisplay();
 
   // initiate bme280
-/*  if (!bme.begin(0x77)) {
+ bool status = bme.begin(0x77);
+ if (!status){//bme.begin(0x77)) {
     Serial.println("Could not find a valid BME280 sensor, check wiring!");
     while (1);
-  }*/
+  }
 }
 
 void loop() { // put your main code here, to run repeatedly:
@@ -196,7 +199,7 @@ void loop() { // put your main code here, to run repeatedly:
   //Serial.printf("State = %d , menu_size = %d , pointer = %d\n", cur_state, menu_len, menu_pointer); // for tracking the state
 
   // buttons will be LOW(0) or HIGH(1)
-  cur1 = digitalRead(BUTTON1); 
+  int cur1 = digitalRead(BUTTON1); 
   cur2 = digitalRead(BUTTON2);
   cur3 = digitalRead(BUTTON3);
 
@@ -278,9 +281,16 @@ void loop() { // put your main code here, to run repeatedly:
     case 10:
       humid_data();
       break;       
+    case 14:
+      plant_change();
+      break;
     default:  // show logo and back to menu if not coded or an error occurs
       display.drawBitmap(0, 0, BOTanical_logo, 128, 64, 1);
-      cur_state = 0;
+      error_cycle++;
+      if (error_cycle == 10) {
+        cur_state = 0;
+        error_cycle = 0;
+      }
       break;             
   }
   
@@ -342,10 +352,10 @@ void sensor_readings() {
   moist_reading = analogRead(SOILPIN); // read the analog value from sensor
 
   // BME280 readings (works for both I2C and SPI)
-/*  temp_reading = bme.readTemperature();
+  temp_reading = bme.readTemperature();
   press_reading = bme.readPressure();
   height_reading = bme.readAltitude(SEALEVELPRESSURE_HPA);
-  humid_reading = bme.readHumidity();*/
+  humid_reading = bme.readHumidity();
 
 
   // Calculate averages
@@ -491,8 +501,7 @@ void light_data() {
   display.println((int) light_reading);
   display.print("Avg value = ");
   display.println((int) avg_light);
-  display.print("Cycle = ");
-  display.println((int) cur_cycle);
+  display.printf("Cycle = %d / %d\n", cur_cycle, cycle_length);
   display.print("C_expected = ");
   display.println(exp_light  * cur_cycle/cycle_length);  
 }
@@ -504,8 +513,7 @@ void moist_data() {
   display.println((int) moist_reading);
   display.print("Avg value = ");
   display.println((int) avg_moist);
-  display.print("Cycle = ");
-  display.println((int) cur_cycle);
+  display.printf("Cycle = %d / %d\n", cur_cycle, cycle_length);
   display.print("C_expected = ");
   display.println(exp_moist  * cur_cycle/cycle_length);  
 }
@@ -517,8 +525,7 @@ void temp_data() {
   display.println((int) temp_reading);
   display.print("Avg value = ");
   display.println((int) avg_temp);
-  display.print("Cycle = ");
-  display.println((int) cur_cycle);
+  display.printf("Cycle = %d / %d\n", cur_cycle, cycle_length);
   display.print("C_expected = ");
   display.println(exp_temp  * cur_cycle/cycle_length);  
 }
@@ -531,10 +538,19 @@ void humid_data() {
   display.print("Avg value = ");
   display.println((int) avg_humid);
   display.printf("Cycle = %d / %d\n", cur_cycle, cycle_length);
-//  display.print("Cycle = ");
-//  display.println((int) cur_cycle);
   display.print("C_expected = ");
   display.println(exp_humid  * cur_cycle/cycle_length);  
+}
+
+void plant_change() {
+  display.setCursor(0, 0);
+  display.println("*plantname");
+//  display.println("\nLight | Moist | Temp | Humid");
+//display.printf("%d | %d", );
+  display.setCursor(15, 50);
+  display.print("Confirm");
+  display.setCursor(75, 50);
+  display.print("Cancel");
 }
 
 void change_menu() {
@@ -562,6 +578,9 @@ void change_menu() {
         already_watered = LOW;
       }
       break;
+    case 5:
+      cur_state = 14;
+      break;
     case 6:
       cur_state = -1;
       break;
@@ -570,6 +589,9 @@ void change_menu() {
     case 9:
     case 10:
       cur_state = 2;
+      break;
+    case 14:
+      cur_state = 0;
       break;
     default:  // go to invalid state
       cur_state = -1;
