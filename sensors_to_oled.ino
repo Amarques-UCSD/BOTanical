@@ -6,6 +6,8 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 
+#include "plant_database.h"
+
 
 #define LED 2 // the blue LED pin
 #define LIGHTSENSORPIN 39 //Ambient light sensor reading
@@ -15,6 +17,7 @@
 #define BUTTON1 35
 #define BUTTON2 32
 #define BUTTON3 15
+#define PUMP 5
 
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
@@ -110,28 +113,32 @@ int cycle_length = 4*24; // 24 * 4*15min delay = 1 day cycle
 int cur_unit = 0;      // for determining when to take readings
 int cur_cycle = 0;     // for the set of readings
 int unit_time = 100;   // 0.1s for cycles (good input responsitivity)
-int sensor_sleep = 15*60*1000;  // 15 minutes -> ms
+int sensor_sleep = 5000;//15*60*1000;  // 15 minutes -> ms
 float unit_length = sensor_sleep / unit_time; // when to read? = 50
 unsigned long previous_millis = 2000; // 2s of setup
 int error_cycle = 0;
 
-float exp_light = 1000; // expected light over a cycle
-float exp_moist = 1000; // threshold for moisture
-float exp_temp = 1000; // average expected temperature
-float exp_humid = 1000; // average expected humidity
+float moist_air = 3000; // initial reading of soil ~2300 when taking pics
+float moist_water = 1250;
+float exp_light[2] = {1000, 2000}; // expected light over a cycle
+float exp_moist[2] = {2500, 2300}; // threshold for moisture
+float exp_temp[2] = {15, 25}; // average expected temperature
+float exp_humid[2] = {40, 60}; // average expected humidity
+float water_min = 1200; // minimum water that should be in container
 float avg_light = 0;
 float avg_moist = 0;
 float avg_temp = 0;
 float avg_humid = 0;
-float past_light = exp_light; // so its not on at start
-float past_moist = exp_moist;
-float past_temp = exp_temp;
-float past_humid = exp_humid;
+float past_light = exp_light[0]; // so its not on at start
+float past_moist = exp_moist[0];
+float past_temp = exp_temp[0];
+float past_humid = exp_humid[0];
 
+int selected_plant = 0;
 int already_watered = LOW;
 
 // variables for menu
-int menu_sizes[] = {6,1,5,1,2,10,1,1,1,1,1,2,1,1,2};
+int menu_sizes[] = {6,1,5,1,2,plant_len + 1,1,1,1,1,1,2,1,1,2};
 int menu_pointer = 0;
 int cur_state = 0;
 int next_state = 0;
@@ -146,6 +153,8 @@ int cur2 = HIGH;
 int last3 = HIGH;
 int cur3 = HIGH;
 
+int pump_on = 0;
+
 void setup() {  // put your setup code here, to run once:
   Serial.begin(115200);
 
@@ -154,6 +163,7 @@ void setup() {  // put your setup code here, to run once:
   pinMode(SOILPIN, INPUT);
   pinMode(WATERPOWER, OUTPUT);
   pinMode(WATERPIN, INPUT);
+  pinMode(PUMP, OUTPUT);
 
   pinMode(BUTTON1, INPUT_PULLUP); // button 1 as internal pull-up resistor
   pinMode(BUTTON2, INPUT_PULLUP); // button 2 as internal pull-up resistor
@@ -300,18 +310,6 @@ void loop() { // put your main code here, to run repeatedly:
   
   menu_len = menu_sizes[cur_state]; 
 
-  if (past_light < exp_light && avg_light < exp_light * cur_cycle/cycle_length) {  // less light then currently expected
-    digitalWrite(LED, HIGH);
-  } else {
-    digitalWrite(LED, LOW);
-    
-    /*  // Circle with exclamation mark
-    display.println("No Light detected!");
-    display.fillCircle(64, 40, 16, WHITE);
-    display.fillCircle(64, 40, 13, BLACK);
-    display.fillRect(62, 30, 4, 10, WHITE);
-    display.fillCircle(64, 45, 3, WHITE);*/
-  }
   display.display();
 
   if (cur_unit == unit_length || cur_unit == 0) {  // take readings
@@ -330,6 +328,7 @@ void loop() { // put your main code here, to run repeatedly:
 
   if (cur_cycle == cycle_length) { // reset cycle
     cur_cycle = 0;
+    already_watered = LOW;
     
     past_light = avg_light;
     past_moist = avg_moist;
@@ -343,6 +342,13 @@ void loop() { // put your main code here, to run repeatedly:
 }
 
 void sensor_readings() {
+  if (already_watered == LOW) {
+    digitalWrite(PUMP, pump_on);  // turn the pump ON
+    pump_on = (pump_on+1)%2;
+  } else {
+    digitalWrite(PUMP, LOW);      // make pump turn OFF
+  }
+
   //Read light level
   light_reading = analogRead(LIGHTSENSORPIN);
 
@@ -354,7 +360,8 @@ void sensor_readings() {
 
   // Moisture sensor
   moist_reading = analogRead(SOILPIN); // read the analog value from sensor
-
+  Serial.printf("Moisture level = %f\n", moist_reading); // needs to be above 1500
+  
   // BME280 readings (works for both I2C and SPI)
   temp_reading = bme.readTemperature();
   press_reading = bme.readPressure();
@@ -397,11 +404,11 @@ void overview_display(){
   display.print("Light value = ");
   display.println((int) light_reading);
   display.print("Avg value = ");
-  display.println((int) avg_light);
+  display.println((int) avg_light*cycle_length/cur_cycle);
   display.print("Cycle = ");
   display.println((int) cur_cycle);
   display.print("C_expected = ");
-  display.println(exp_light  * cur_cycle/cycle_length);
+  display.println(exp_light[0]  * cur_cycle/cycle_length);
 }
 
 void sensors_display() {
@@ -431,8 +438,11 @@ void sensors_display() {
 
 void notifications_display(){
   // Display static text
-  display.setCursor(0, 20);
-  display.println("Notifications:");
+  display.setCursor(0, 0);
+  display.println("Attention");
+  display.setCursor(15, 20);
+  if (water_level < water_min)  
+    display.println("LOW - Refill water");
 }
  
 void water_display() {
@@ -465,7 +475,12 @@ void plant_display(){
   display.drawRect(1, 15, 126, 48, WHITE);
   
   // show scrolling menu
-  char* menu_text[menu_len] = {"Back", "Plant 1", "Plant 2", "Plant 3", "Plant 4", "Plant 5", "Plant 6", "Plant 7", "Plant 8", "Plant 9"};
+  char* menu_text[menu_len];// = {"Back", "Plant 1", "Plant 2", "Plant 3", "Plant 4", "Plant 5", "Plant 6", "Plant 7", "Plant 8", "Plant 9"};
+  menu_text[0] = "Back              ";
+  for (int i = 0; i < menu_len; i++) {
+    menu_text[i+1] = short_name[i]; 
+    //menu_text[i+1][15] = '\0';
+  }
   for (int i = 0; i < 4; i++) { 
     display.setCursor(15, 20+10*i);
     display.println(menu_text[(menu_len + menu_pointer+i-1) % menu_len]);      
@@ -501,13 +516,13 @@ void credit_display() {
 void light_data() {
   // Display static text
   display.setCursor(0, 20);
-  display.print("Light value = ");
-  display.println((int) light_reading);
+  display.print("Light = ");
+  display.print((int) light_reading);
+  display.println(" lux");
   display.print("Avg value = ");
-  display.println((int) avg_light);
+  display.println((int) avg_light*cycle_length/cur_cycle);
   display.printf("Cycle = %d / %d\n", cur_cycle, cycle_length);
-  display.print("C_expected = ");
-  display.println(exp_light  * cur_cycle/cycle_length);  
+  display.printf("Expected = %d ~ %d\n", (int) exp_light[0], (int) exp_light[1]);
 }
 
 void moist_data() {
@@ -516,22 +531,21 @@ void moist_data() {
   display.print("Moisture value = ");
   display.println((int) moist_reading);
   display.print("Avg value = ");
-  display.println((int) avg_moist);
+  display.println((int) avg_moist*cycle_length/cur_cycle);
   display.printf("Cycle = %d / %d\n", cur_cycle, cycle_length);
-  display.print("C_expected = ");
-  display.println(exp_moist  * cur_cycle/cycle_length);  
+  display.printf("Expected = %d ~ %d\n", (int) exp_moist[0], (int) exp_moist[1]);
 }
 
 void temp_data() {
   // Display static text
   display.setCursor(0, 20);
-  display.print("Temperature value = ");
-  display.println((int) temp_reading);
+  display.print("Temperature = ");
+  display.print((int) temp_reading);
+  display.println("C");
   display.print("Avg value = ");
-  display.println((int) avg_temp);
+  display.println((int) avg_temp*cycle_length/cur_cycle);
   display.printf("Cycle = %d / %d\n", cur_cycle, cycle_length);
-  display.print("C_expected = ");
-  display.println(exp_temp  * cur_cycle/cycle_length);  
+  display.printf("Expected = %d ~ %d\n", (int) exp_temp[0], (int) exp_temp[1]);
 }
 
 void humid_data() {
@@ -540,10 +554,10 @@ void humid_data() {
   display.print("Humidity value = ");
   display.println((int) humid_reading);
   display.print("Avg value = ");
-  display.println((int) avg_humid);
+  display.println((int) avg_humid*cycle_length/cur_cycle);
   display.printf("Cycle = %d / %d\n", cur_cycle, cycle_length);
-  display.print("C_expected = ");
-  display.println(exp_humid  * cur_cycle/cycle_length);  
+  display.printf("Expected = %d ~ %d\n", (int) exp_humid[0], (int) exp_humid[1]);
+  //display.println(exp_humid[0]  * cur_cycle/cycle_length);  
 }
 
 void plant_change() {
@@ -596,7 +610,12 @@ void change_menu() {
       }
       break;
     case 5:
-      cur_state = 14;
+      if (menu_pointer == 0)
+        cur_state = 0;
+      else {
+        cur_state = 14;
+        selected_plant = menu_pointer - 1;
+      }
       break;
     case 6:
       cur_state = -1;
@@ -609,6 +628,19 @@ void change_menu() {
       break;
     case 14:
       cur_state = 0;
+      if (menu_pointer == 0) {
+        exp_light[0] = plant_light_val[plant_light_level[selected_plant] - 1];
+        exp_light[1] = plant_light_val[plant_light_level[selected_plant]];
+        
+        exp_moist[0] = plant_water_val[plant_water[selected_plant] - 1];
+        exp_moist[1] = plant_water_val[plant_water[selected_plant]];
+        
+        exp_temp[0] = plant_temp_min[selected_plant];
+        exp_temp[1] = plant_temp_max[selected_plant];
+        
+        exp_humid[0] = plant_humidity_min[selected_plant];
+        exp_humid[1] = plant_humidity_max[selected_plant];
+      }
       break;
     default:  // go to invalid state
       cur_state = -1;
