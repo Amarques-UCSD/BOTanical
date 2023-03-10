@@ -360,7 +360,6 @@ void sensor_readings() {
 
   // Moisture sensor
   moist_reading = analogRead(SOILPIN); // read the analog value from sensor
-  Serial.printf("Moisture level = %f\n", moist_reading); // needs to be above 1500
   
   // BME280 readings (works for both I2C and SPI)
   temp_reading = bme.readTemperature();
@@ -562,9 +561,14 @@ void humid_data() {
 
 void plant_change() {
   display.setCursor(0, 0);
-  display.println("*plantname");
-//  display.println("\nLight | Moist | Temp | Humid");
-//display.printf("%d | %d", );
+  display.println(plant_name[selected_plant]);
+
+  display.setCursor(0, 21);
+  display.printf("Light = %d ~ %d\n", plant_light_val[plant_light_level[selected_plant] - 1], plant_light_val[plant_light_level[selected_plant]]);
+  display.printf("Temp = %d ~ %d\n", plant_temp_min[selected_plant], plant_temp_max[selected_plant]);
+  display.printf("Water = %d ~ %d\n", plant_water_val[plant_water[selected_plant] - 1], plant_water_val[plant_water[selected_plant]]);
+        
+  display.drawRect(-1, 47, 130, 20, WHITE);
   display.setCursor(15, 50);
   display.print("Confirm");
   display.setCursor(75, 50);

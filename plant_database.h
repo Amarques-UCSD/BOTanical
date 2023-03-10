@@ -38,8 +38,8 @@ const int plant_len = 9;
 
 char* short_name[plant_len] = {"Aechmea fasciata", "Anthurium", "Aspidistra ...", "Begonia", "Calathea", "Chlorophytum ...", 
                     "Cordyline ...", "Nephrolepsis ...", "Sansevieria"};
-char* plant_name[plant_len] = {"Aechmea fasciata", "Anthurium", "Aspidistra elatior", "Begonia", "Calathea", "Chlorophytum elatum", 
-                    "Cordyline fruticosa", "Nephrolepsis cordifolia", "Sansevieria"};
+char* plant_name[plant_len] = {"Aechmea \nfasciata", "Anthurium", "Aspidistra \nelatior", "Begonia", "Calathea", "Chlorophytum \nelatum", 
+                    "Cordyline \nfruticosa", "Nephrolepsis \ncordifolia", "Sansevieria"};
 int plant_water[plant_len] = {3, 3, 2, 3, 3, 3, 3, 3, 1};
 int plant_water_val[4] = {2700, 2500, 2300, 2000};  // guesswork based on sensor readings
 int plant_light_level[plant_len] = {2, 2, 1, 4, 2, 3, 2, 2, 1};
