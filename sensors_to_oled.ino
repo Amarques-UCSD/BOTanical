@@ -109,9 +109,9 @@ float water_level = 0;
 
 
 // variables for calculation
-int cycle_length = 4*24; // 24 * 4*15min delay = 1 day cycle
+int cycle_length = 5;//4*24; // 24 * 4*15min delay = 1 day cycle
 int cur_unit = 0;      // for determining when to take readings
-int cur_cycle = 0;     // for the set of readings
+int cur_cycle = 1;     // for the set of readings
 int unit_time = 100;   // 0.1s for cycles (good input responsitivity)
 int sensor_sleep = 5000;//15*60*1000;  // 15 minutes -> ms
 float unit_length = sensor_sleep / unit_time; // when to read? = 50
@@ -135,6 +135,7 @@ float past_temp = exp_temp[0];
 float past_humid = exp_humid[0];
 
 int selected_plant = 0;
+int cur_plant = -1;
 int already_watered = LOW;
 
 // variables for menu
@@ -222,7 +223,6 @@ void loop() { // put your main code here, to run repeatedly:
   int pressed3 = LOW; 
   if(last1 == LOW && cur1 == HIGH) {
     pressed1 = HIGH;  // Button 1 was just pressed
-    Serial.println("Button 1 pressed");
     
     if (menu_pointer == menu_len-1) {
       menu_pointer = 0;  // already at the bottom, go to top
@@ -232,7 +232,6 @@ void loop() { // put your main code here, to run repeatedly:
   }
   if(last2 == LOW && cur2 == HIGH) {
     pressed2 = HIGH;  // Button 2 was just pressed
-    Serial.println("Button 2 pressed");
 
     if (menu_pointer == 0) { 
       menu_pointer = menu_len-1;  // already at the top, go to bottom        
@@ -242,7 +241,6 @@ void loop() { // put your main code here, to run repeatedly:
   }
   if(last3 == LOW && cur3 == HIGH) {
     pressed3 = HIGH;  // Button 3 was just pressed
-    Serial.println("Button 3 pressed");
 
     change_menu();    
   } 
@@ -326,18 +324,18 @@ void loop() { // put your main code here, to run repeatedly:
   previous_millis = millis();  
   //Serial.printf("after: %d | %s | unit = %d , cycle = %d\n", millis(), strftime_buf, cur_unit, cur_cycle); 
 
-  if (cur_cycle == cycle_length) { // reset cycle
-    cur_cycle = 0;
+  if (cur_cycle == cycle_length + 1) { // reset cycle
+    cur_cycle = 1;
     already_watered = LOW;
     
     past_light = avg_light;
     past_moist = avg_moist;
     past_temp = avg_temp;
     past_humid = avg_humid;
-    avg_light = 0;
-    avg_moist = 0;
-    avg_temp = 0;
-    avg_humid = 0;
+    //avg_light = 0;
+    //avg_moist = 0;
+    //avg_temp = 0;
+    //avg_humid = 0;
   }
 }
 
@@ -363,16 +361,16 @@ void sensor_readings() {
   
   // BME280 readings (works for both I2C and SPI)
   temp_reading = bme.readTemperature();
-  press_reading = bme.readPressure();
-  height_reading = bme.readAltitude(SEALEVELPRESSURE_HPA);
+  press_reading = bme.readPressure(); // not needed
+  height_reading = bme.readAltitude(SEALEVELPRESSURE_HPA);  // not needed
   humid_reading = bme.readHumidity();
 
 
   // Calculate averages
-  avg_light += light_reading/cycle_length;
-  avg_moist += moist_reading/cycle_length;
-  //avg_temp += temp_reading/cycle_length;
-  //avg_humid += humid_reading/cycle_length;  
+  avg_light = avg_light*(cur_cycle-1)/cur_cycle + light_reading/cur_cycle;
+  avg_moist = avg_moist*(cur_cycle-1)/cur_cycle + moist_reading/cur_cycle;
+  avg_temp = avg_temp*(cur_cycle-1)/cur_cycle + temp_reading/cur_cycle;
+  avg_humid = avg_humid*(cur_cycle-1)/cur_cycle + humid_reading/cur_cycle;
   cur_cycle++;  // increment cycle as calculations are done
 }
 
@@ -399,15 +397,42 @@ void menu_display(){
 
 void overview_display(){
   // Display static text
+  display.setCursor(0,0);
+  if (cur_plant == -1) display.print("Default");
+  else display.print(plant_name[cur_plant]) ;
+  
   display.setCursor(0, 20);
-  display.print("Light value = ");
-  display.println((int) light_reading);
-  display.print("Avg value = ");
-  display.println((int) avg_light*cycle_length/cur_cycle);
-  display.print("Cycle = ");
-  display.println((int) cur_cycle);
-  display.print("C_expected = ");
-  display.println(exp_light[0]  * cur_cycle/cycle_length);
+  if (avg_light < exp_light[0]) {
+    display.println("Too little light");    
+  } else if (avg_light > exp_light[1]) {
+    display.println("Too much light");    
+  } else {
+    display.println("Good light");
+  }
+  
+  if (avg_moist < exp_moist[0]) {
+    display.println("Soil too moist");    
+  } else if (avg_moist > exp_moist[1]) {
+    display.println("Soil too dry");    
+  } else {
+    display.println("Good soil moisture");
+  }
+
+  if (avg_temp < exp_temp[0]) {
+    display.println("Too cold");    
+  } else if (avg_temp > exp_temp[1]) {
+    display.println("Too hot");    
+  } else {
+    display.println("Good temperature");
+  }
+
+  if (avg_humid < exp_humid[0]) {
+    display.println("Too much humidity");    
+  } else if (avg_humid > exp_humid[1]) {
+    display.println("Too little humidity");    
+  } else {
+    display.println("Good humidity");
+  }
 }
 
 void sensors_display() {
@@ -515,48 +540,37 @@ void credit_display() {
 void light_data() {
   // Display static text
   display.setCursor(0, 20);
-  display.print("Light = ");
-  display.print((int) light_reading);
-  display.println(" lux");
-  display.print("Avg value = ");
-  display.println((int) avg_light*cycle_length/cur_cycle);
-  display.printf("Cycle = %d / %d\n", cur_cycle, cycle_length);
-  display.printf("Expected = %d ~ %d\n", (int) exp_light[0], (int) exp_light[1]);
+  display.printf("Light = %d lux\n",(int) light_reading);
+  display.printf("Avg value = %d\n",(int) avg_light);
+  display.printf("Cycle = %d / %d\n", (cur_cycle+3)%5+1, cycle_length);
+  display.printf("Expected :\n  %d ~ %d\n", (int) exp_light[0], (int) exp_light[1]);
 }
 
 void moist_data() {
   // Display static text
   display.setCursor(0, 20);
-  display.print("Moisture value = ");
-  display.println((int) moist_reading);
-  display.print("Avg value = ");
-  display.println((int) avg_moist*cycle_length/cur_cycle);
-  display.printf("Cycle = %d / %d\n", cur_cycle, cycle_length);
-  display.printf("Expected = %d ~ %d\n", (int) exp_moist[0], (int) exp_moist[1]);
+  display.printf("Moisture value = %d\n",(int) moist_reading);
+  display.printf("Avg value = %d\n",(int) avg_moist);
+  display.printf("Cycle = %d / %d\n", (cur_cycle+3)%5+1, cycle_length);
+  display.printf("Expected :\n  %d ~ %d\n", (int) exp_moist[0], (int) exp_moist[1]);
 }
 
 void temp_data() {
   // Display static text
   display.setCursor(0, 20);
-  display.print("Temperature = ");
-  display.print((int) temp_reading);
-  display.println("C");
-  display.print("Avg value = ");
-  display.println((int) avg_temp*cycle_length/cur_cycle);
-  display.printf("Cycle = %d / %d\n", cur_cycle, cycle_length);
-  display.printf("Expected = %d ~ %d\n", (int) exp_temp[0], (int) exp_temp[1]);
+  display.printf("Temperature = %d C\n", (int) temp_reading);
+  display.printf("Avg value = %d\n", (int) avg_temp);
+  display.printf("Cycle = %d / %d\n", (cur_cycle+3)%5+1, cycle_length);
+  display.printf("Expected :\n  %d ~ %d\n", (int) exp_temp[0], (int) exp_temp[1]);
 }
 
 void humid_data() {
   // Display static text
   display.setCursor(0, 20);
-  display.print("Humidity value = ");
-  display.println((int) humid_reading);
-  display.print("Avg value = ");
-  display.println((int) avg_humid*cycle_length/cur_cycle);
-  display.printf("Cycle = %d / %d\n", cur_cycle, cycle_length);
-  display.printf("Expected = %d ~ %d\n", (int) exp_humid[0], (int) exp_humid[1]);
-  //display.println(exp_humid[0]  * cur_cycle/cycle_length);  
+  display.printf("Humidity = %d %%\n", (int) humid_reading);
+  display.printf("Avg value = %d\n", (int) avg_humid);
+  display.printf("Cycle = %d / %d\n", (cur_cycle+3)%5+1, cycle_length);
+  display.printf("Expected :\n  %d ~ %d\n", (int) exp_humid[0], (int) exp_humid[1]);
 }
 
 void plant_change() {
@@ -633,6 +647,8 @@ void change_menu() {
     case 14:
       cur_state = 0;
       if (menu_pointer == 0) {
+        cur_plant = selected_plant;
+        
         exp_light[0] = plant_light_val[plant_light_level[selected_plant] - 1];
         exp_light[1] = plant_light_val[plant_light_level[selected_plant]];
         
