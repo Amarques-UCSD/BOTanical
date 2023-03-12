@@ -16,7 +16,7 @@
 #define BUTTON1 35
 #define BUTTON2 32
 #define BUTTON3 15
-#define PUMP 5
+#define PUMP 5    // to turn pump on
 
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
@@ -26,7 +26,6 @@
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // Create BME280 object
-#define SEALEVELPRESSURE_HPA (1013.25)
 Adafruit_BME280 bme; // I2C
 
 
@@ -106,7 +105,6 @@ float height_reading = 0;
 float humid_reading = 0;
 float water_level = 0;
 
-
 // variables for calculation
 int cycle_length = 5;//4*24; // 24 * 4*15min delay = 1 day cycle
 int cur_unit = 0;      // for determining when to take readings
@@ -132,13 +130,18 @@ float past_light = exp_light[0]; // so its not on at start
 float past_moist = exp_moist[0];
 float past_temp = exp_temp[0];
 float past_humid = exp_humid[0];
+int bad_light = 0;
+int bad_moist = 0;
+int bad_temp = 0;
+int bad_humid = 0;
 
 int selected_plant = 0;
 int cur_plant = -1;
 int already_watered = LOW;
+int pump_on = 0;
 
 // variables for menu
-int menu_sizes[] = {6,1,5,1,2,plant_len + 1,1,1,1,1,1,2,1,1,2};
+int menu_sizes[] = {6,1,5,1,2,plant_len+1,1,1,1,1,1,2,2};
 int menu_pointer = 0;
 int cur_state = 0;
 int next_state = 0;
@@ -152,8 +155,6 @@ int last2 = HIGH;
 int cur2 = HIGH;
 int last3 = HIGH;
 int cur3 = HIGH;
-
-int pump_on = 0;
 
 void setup() {  // put your setup code here, to run once:
   Serial.begin(115200);
@@ -183,7 +184,6 @@ void setup() {  // put your setup code here, to run once:
   display.display();
   delay(1000 - millis());
   display.clearDisplay(); // needs to be here or else crash
-  //display.display();
 
   // initiate bme280
   bool status = bme.begin(0x77);
@@ -210,37 +210,18 @@ void loop() { // put your main code here, to run repeatedly:
   localtime_r(&now, &timeinfo);
   strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
 
-  //Serial.printf("State = %d , menu_size = %d , pointer = %d\n", cur_state, menu_len, menu_pointer); // for tracking the state
-
   // buttons will be LOW(0) or HIGH(1)
   int cur1 = digitalRead(BUTTON1); 
   cur2 = digitalRead(BUTTON2);
   cur3 = digitalRead(BUTTON3);
 
-  int pressed1 = LOW;
-  int pressed2 = LOW;
-  int pressed3 = LOW; 
-  if(last1 == LOW && cur1 == HIGH) {
-    pressed1 = HIGH;  // Button 1 was just pressed
-    
-    if (menu_pointer == menu_len-1) {
-      menu_pointer = 0;  // already at the bottom, go to top
-    } else {
-      menu_pointer++;
-    }
+  if(last1 == LOW && cur1 == HIGH) {    
+    menu_pointer = (menu_pointer+1)%menu_len;  // make it wrap arround
   }
   if(last2 == LOW && cur2 == HIGH) {
-    pressed2 = HIGH;  // Button 2 was just pressed
-
-    if (menu_pointer == 0) { 
-      menu_pointer = menu_len-1;  // already at the top, go to bottom        
-    } else {
-      menu_pointer--;
-    }
+    menu_pointer = (menu_pointer-1+menu_len)%menu_len;  // make it wrap arround
   }
   if(last3 == LOW && cur3 == HIGH) {
-    pressed3 = HIGH;  // Button 3 was just pressed
-
     change_menu();    
   } 
   last1 = cur1;
@@ -291,14 +272,17 @@ void loop() { // put your main code here, to run repeatedly:
       break;      
     case 10:
       humid_data();
-      break;       
-    case 14:
+      break;  
+    case 11:
+      clear_notifications();
+      break;     
+    case 12:
       plant_change();
       break;
     default:  // show logo and back to menu if not coded or an error occurs
       display.drawBitmap(0, 0, BOTanical_logo, 128, 64, 1);
       error_cycle++;
-      if (error_cycle == 10) {
+      if (error_cycle == 10) {  // show logo for 1s
         cur_state = 0;
         error_cycle = 0;
       }
@@ -311,17 +295,19 @@ void loop() { // put your main code here, to run repeatedly:
 
   if (cur_unit == unit_length || cur_unit == 0) {  // take readings
     sensor_readings();
-    //delay(unit_time - 10);  // sensor has a 10ms delay
     cur_unit = 1;  
   } else {
-    //delay(unit_time);
     cur_unit++;
+    if (pump_on == 10) {  // 10 * 100ms = 1s of watering
+      digitalWrite(PUMP, LOW);      // turn pump OFF
+    }
+    pump_on++;
   }
+
+  // make time cycle constant
   unsigned long millis_now = millis();
-  //Serial.printf("Previous = %d | now = %d | delay %d |", previous_millis, millis_now, unit_time - (millis_now - previous_millis));
   delay(unit_time - (millis_now - previous_millis));
-  previous_millis = millis();  
-  //Serial.printf("after: %d | %s | unit = %d , cycle = %d\n", millis(), strftime_buf, cur_unit, cur_cycle); 
+  previous_millis = millis();
 
   if (cur_cycle == cycle_length + 1) { // reset cycle
     cur_cycle = 1;
@@ -331,19 +317,57 @@ void loop() { // put your main code here, to run repeatedly:
     past_moist = avg_moist;
     past_temp = avg_temp;
     past_humid = avg_humid;
-    //avg_light = 0;
-    //avg_moist = 0;
-    //avg_temp = 0;
-    //avg_humid = 0;
+
+    if (avg_light < exp_light[0]) {
+      if (bad_light > 0) bad_light = -1;
+      else bad_light--; 
+    } else if (avg_light > exp_light[1]) {
+      if (bad_light < 0) bad_light = 1;
+      else bad_light++;
+    } else {
+      bad_light = 0;
+    }
+    
+    if (avg_moist < exp_moist[0]) {
+      if (bad_moist > 0) bad_moist = -1;
+      else bad_moist--; 
+    } else if (avg_moist > exp_moist[1]) {
+      if (bad_moist < 0) bad_moist = 1;
+      else bad_moist++;
+    } else {
+      bad_moist = 0;
+    }    
+    
+    if (avg_temp < exp_temp[0]) {
+      if (bad_temp > 0) bad_temp = -1;
+      else bad_temp--; 
+    } else if (avg_temp > exp_temp[1]) {
+      if (bad_temp < 0) bad_temp = 1;
+      else bad_temp++;
+    } else {
+      bad_temp = 0;
+    }
+    
+    if (avg_humid < exp_humid[0]) {
+      if (bad_humid > 0) bad_humid = -1;
+      else bad_humid--; 
+    } else if (avg_humid > exp_humid[1]) {
+      if (bad_humid < 0) bad_humid = 1;
+      else bad_humid++;
+    } else {
+      bad_humid = 0;
+    }    
   }
 }
 
 void sensor_readings() {
   if (already_watered == LOW) {
-    digitalWrite(PUMP, pump_on);  // turn the pump ON
-    pump_on = (pump_on+1)%2;
+    if (avg_moist > exp_moist[1] && bad_moist >= 0) { // soil to dry, but not previously overwatered
+      digitalWrite(PUMP, HIGH);  // turn the pump ON
+      pump_on = 1;
+    }
   } else {
-    digitalWrite(PUMP, LOW);      // make pump turn OFF
+    digitalWrite(PUMP, LOW);      // make pump stay OFF
   }
 
   //Read light level
@@ -360,8 +384,6 @@ void sensor_readings() {
   
   // BME280 readings (works for both I2C and SPI)
   temp_reading = bme.readTemperature();
-  press_reading = bme.readPressure(); // not needed
-  height_reading = bme.readAltitude(SEALEVELPRESSURE_HPA);  // not needed
   humid_reading = bme.readHumidity();
 
 
@@ -374,11 +396,23 @@ void sensor_readings() {
 }
 
 void menu_display(){
+  // calculate how many notifs
+  int notifs = 0;
+  notifs += water_level < water_min;
+  notifs += bad_light != 0;
+  notifs += bad_moist != 0;
+  notifs += bad_temp != 0;
+  notifs += bad_humid != 0;
+ 
   // show menu
-  char* menu_text[menu_len] = {"Overview", "Sensor Readings", "Notifications", "Already Watered", "Select Plant", "Credits" };
+  char* menu_text[menu_len] = {"Overview", "Sensor Readings", "Notifications", "Already Watered", "Select Plant", "Credits"};
   for (int i = 0; i < menu_len; i++) {
     display.setCursor(15, 5+10*i);
-    display.println(menu_text[i]);      
+    display.print(menu_text[i]);      
+    if (i == 2 && notifs > 0) {
+      display.printf(" (%d)",notifs);
+    }
+    display.println("");
   }    
   // Draw pointer  
   if (pointer_blink == 0) {
@@ -463,9 +497,52 @@ void notifications_display(){
   // Display static text
   display.setCursor(0, 0);
   display.println("Attention");
-  display.setCursor(15, 20);
-  if (water_level < water_min)  
-    display.println("LOW - Refill water");
+
+  int y = 12;
+  if (water_level < water_min) {
+    display.setCursor(0, y);
+    display.println(" LOW - Refill water");
+    y += 10;
+  }
+
+  if (bad_light != 0) {
+    display.setCursor(0, y);
+    if (bad_light > 0) {
+      display.printf("strong light ~ %d days", bad_light);
+    } else {
+      display.printf("weak light ~ %d days", -bad_light);      
+    }
+    y += 10;
+  }  
+
+  if (bad_moist != 0) {
+    display.setCursor(0, y);
+    if (bad_light > 0) {
+      display.printf("dry soil ~ %d days", bad_moist);
+    } else {
+      display.printf("overwatered ~ %d days", -bad_moist);      
+    }
+    y += 10;
+  }  
+
+  if (bad_temp != 0) {
+    display.setCursor(0, y);
+    if (bad_temp > 0) {
+      display.printf("too cold ~ %d days", bad_temp);
+    } else {
+      display.printf("too hot ~ %d days", -bad_temp);      
+    }
+    y += 10;
+  }  
+
+  if (bad_humid != 0) {
+    display.setCursor(0, y);
+    if (bad_light > 0) {
+      display.printf("too humid ~ %d days", bad_humid);
+    } else {
+      display.printf("too arid ~ %d days", -bad_humid);      
+    }
+  }  
 }
  
 void water_display() {
@@ -498,16 +575,17 @@ void plant_display(){
   display.drawRect(1, 15, 126, 48, WHITE);
   
   // show scrolling menu
-  char* menu_text[menu_len];// = {"Back", "Plant 1", "Plant 2", "Plant 3", "Plant 4", "Plant 5", "Plant 6", "Plant 7", "Plant 8", "Plant 9"};
+  char* menu_text[menu_len];
   menu_text[0] = "Back              ";
   for (int i = 0; i < menu_len; i++) {
-    menu_text[i+1] = short_name[i]; 
-    //menu_text[i+1][15] = '\0';
+    menu_text[i+1] = short_name[i];
   }
+  
   for (int i = 0; i < 4; i++) { 
     display.setCursor(15, 20+10*i);
     display.println(menu_text[(menu_len + menu_pointer+i-1) % menu_len]);      
   }    
+  
   // Draw pointer
   if (pointer_blink == 0) {
     display.drawCircle(7, 33, 2, WHITE);
@@ -530,8 +608,10 @@ void plant_display(){
 
 void credit_display() {
   // Display static text
-  display.setCursor(0, 15);
-  display.println("Made by:\n  Alexandre Marques\n  Snir Kinog\n  Sahil Singh");
+  display.setCursor(0, 0);
+  display.println("Made by:");
+  display.setCursor(0, 10);
+  display.println("\n  Alexandre Marques\n  Snir Kinog\n  Sahil Singh");
   display.setCursor(0, 52);  
   display.println("ECE 196 WI23");
 }      
@@ -548,7 +628,7 @@ void light_data() {
 void moist_data() {
   // Display static text
   display.setCursor(0, 20);
-  display.printf("Moisture value = %d\n",(int) moist_reading);
+  display.printf("Moisture = %d\n",(int) moist_reading);
   display.printf("Avg value = %d\n",(int) avg_moist);
   display.printf("Cycle = %d / %d\n", (cur_cycle+3)%5+1, cycle_length);
   display.printf("Expected :\n  %d ~ %d\n", (int) exp_moist[0], (int) exp_moist[1]);
@@ -570,6 +650,31 @@ void humid_data() {
   display.printf("Avg value = %d\n", (int) avg_humid);
   display.printf("Cycle = %d / %d\n", (cur_cycle+3)%5+1, cycle_length);
   display.printf("Expected :\n  %d ~ %d\n", (int) exp_humid[0], (int) exp_humid[1]);
+}
+
+void clear_notifications() {
+  // Display static text
+  display.setCursor(0, 17); 
+  display.print("Delete the current\nnotifications?\n(reset daily counter)"); 
+
+  display.drawRect(-1, 47, 130, 20, WHITE);
+  display.setCursor(15, 50);
+  display.print("Confirm");
+  display.setCursor(75, 50);
+  display.print("Cancel");
+
+  // Draw pointer
+  if (pointer_blink == 0) {
+    display.drawCircle(7 + 60*menu_pointer, 53, 2, WHITE);
+    if (cur_unit % 5 == 0) {
+      pointer_blink = 1;
+    }
+  } else {
+    display.fillCircle(7 + 60*menu_pointer, 53, 2, WHITE);
+    if (cur_unit % 5 == 0) {
+      pointer_blink = 0;
+    }
+  }  
 }
 
 void plant_change() {
@@ -618,6 +723,7 @@ void change_menu() {
       break;
     case 3:
       cur_state = 11;  
+      break;
     case 4:
       cur_state = 0;
       if (menu_pointer == 0) {
@@ -643,7 +749,16 @@ void change_menu() {
     case 10:
       cur_state = 2;
       break;
-    case 14:
+    case 11:
+      cur_state = 0;
+      if (menu_pointer == 0) {
+        water_level = 2000;
+        bad_light = 0;
+        bad_moist = 0;
+        bad_temp = 0;
+        bad_humid = 0;
+      }      
+    case 12:
       cur_state = 0;
       if (menu_pointer == 0) {
         cur_plant = selected_plant;
