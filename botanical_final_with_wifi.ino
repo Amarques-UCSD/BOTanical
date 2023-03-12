@@ -162,6 +162,8 @@ int cur2 = HIGH;
 int last3 = HIGH;
 int cur3 = HIGH;
 
+int wifi_attempt = 0;
+
 // SSID and password of Wifi connection:
 const char* ssid = "";
 const char* password = "";
@@ -175,13 +177,20 @@ void setup() {  // put your setup code here, to run once:
 
   WiFi.begin(ssid, password);
   Serial.println("Establishing connection to WiFi with SSID: " + String(ssid));
- 
+
+  
   while (WiFi.status() != WL_CONNECTED) {             // wait until WiFi is connected
-    delay(1000);
+    delay(2000);
     Serial.print(".");
+    if(wifi_attempt >= 3) break;
+    wifi_attempt = wifi_attempt + 1;
+    Serial.println(wifi_attempt);
   }
+
+  if (WiFi.status() == WL_CONNECTED){
   Serial.print("Connected to network with IP address: ");
-  Serial.println(WiFi.localIP());  
+  Serial.println(WiFi.localIP());
+  }  
 
   pinMode(LED, OUTPUT);   // configure pin as an OUTPUT
   pinMode(LIGHTSENSORPIN, INPUT);
@@ -239,6 +248,10 @@ void setup() {  // put your setup code here, to run once:
   webSocket.onEvent(webSocketEvent);                  // define a callback function -> what does the ESP32 need to do when an event from the websocket is received? -> run function "webSocketEvent()"
 
   server.begin();
+  
+  previous_millis = millis();
+  Serial.printf("Setup time = %d | cycle start at : %d\n", previous_millis, previous_millis - previous_millis % unit_time);
+  previous_millis = previous_millis - previous_millis % unit_time;  // make time cycle exact
 }
 
 void loop() { // put your main code here, to run repeatedly:
@@ -340,7 +353,9 @@ void loop() { // put your main code here, to run repeatedly:
 
   if (cur_unit == unit_length || cur_unit == 0) {  // take readings
     sensor_readings();
-    update_website();
+    if (wifi_attempt < 3){
+      update_website();
+    }
     cur_unit = 1;  
   } else {
     cur_unit++;
@@ -352,7 +367,7 @@ void loop() { // put your main code here, to run repeatedly:
 
     // make time cycle constant
     unsigned long millis_now = millis();
-    delay(unit_time);  //    delay(unit_time - (millis_now - previous_millis));
+    delay(unit_time - (millis_now - previous_millis));
     previous_millis = millis();
 
   if (cur_cycle == cycle_length + 1) { // reset cycle
@@ -821,7 +836,7 @@ void change_menu() {
         exp_humid[1] = plant_humidity_max[selected_plant];
       }
       break;
-    default:  // go to invalid state
+    default:  // go to invalid statecu
       cur_state = -1;
       break;             
   }
