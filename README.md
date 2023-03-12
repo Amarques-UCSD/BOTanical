@@ -16,6 +16,4 @@
 |9.	Temperature sensor	|		|2|
 |10.	Humidity sensor		|		|2|
 |11.	Notifications read?	|2		|0|
-|12.	Thanks for watering|			|0|
-|13.	Botanical will water	|		|0|
-|14.	Plant Details		|2		|0|
+|12.	Plant Details		|2		|0|
