@@ -781,7 +781,7 @@ void change_menu() {
       if (menu_pointer == 0)
         cur_state = 0;
       else {
-        cur_state = 14;
+        cur_state = 12;
         selected_plant = menu_pointer - 1;
       }
       break;
