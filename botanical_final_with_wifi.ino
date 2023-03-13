@@ -6,6 +6,8 @@
 #include <Adafruit_BME280.h>
 
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <UniversalTelegramBot.h>
 #include <ESPAsyncWebServer.h>
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h>
@@ -172,24 +174,32 @@ const char* password = "";
 AsyncWebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 
+// Initialize Telegram BOT
+#define BOTtoken ""
+#define CHAT_ID ""
+
+WiFiClientSecure client;
+UniversalTelegramBot bot(BOTtoken, client);
+
 void setup() {  // put your setup code here, to run once:
   Serial.begin(115200);
 
   WiFi.begin(ssid, password);
   Serial.println("Establishing connection to WiFi with SSID: " + String(ssid));
 
+  client.setCACert(TELEGRAM_CERTIFICATE_ROOT); // Add root certificate for api.telegram.org
   
   while (WiFi.status() != WL_CONNECTED) {             // wait until WiFi is connected
     delay(2000);
     Serial.print(".");
     if(wifi_attempt >= 3) break;
     wifi_attempt = wifi_attempt + 1;
-    Serial.println(wifi_attempt);
   }
 
   if (WiFi.status() == WL_CONNECTED){
-  Serial.print("Connected to network with IP address: ");
-  Serial.println(WiFi.localIP());
+    Serial.print("Connected to network with IP address: ");
+    Serial.println(WiFi.localIP());
+    bot.sendMessage(CHAT_ID, "Bot started up", "");
   }  
 
   pinMode(LED, OUTPUT);   // configure pin as an OUTPUT
@@ -353,9 +363,6 @@ void loop() { // put your main code here, to run repeatedly:
 
   if (cur_unit == unit_length || cur_unit == 0) {  // take readings
     sensor_readings();
-    if (wifi_attempt < 3){
-      update_website();
-    }
     cur_unit = 1;  
   } else {
     cur_unit++;
@@ -364,6 +371,10 @@ void loop() { // put your main code here, to run repeatedly:
     }
     pump_on++;
   }
+
+  if (wifi_attempt < 3){
+      update_website();
+    }
 
     // make time cycle constant
     unsigned long millis_now = millis();
@@ -562,6 +573,7 @@ void notifications_display(){
   if (water_level < water_min) {
     display.setCursor(0, y);
     display.println(" LOW - Refill water");
+    bot.sendMessage(CHAT_ID, "Water Container Empty. Please refill water!!", "");
     y += 10;
   }
 
@@ -569,8 +581,10 @@ void notifications_display(){
     display.setCursor(0, y);
     if (bad_light > 0) {
       display.printf("strong light ~ %d days", bad_light);
+      bot.sendMessage(CHAT_ID, " Your Plant is receiving too much Sunlight!! Move it to cooler location.", "");
     } else {
-      display.printf("weak light ~ %d days", -bad_light);      
+      display.printf("weak light ~ %d days", -bad_light);
+      bot.sendMessage(CHAT_ID, "Your Plant needs more Sunlight!! Move it to better location.", "");      
     }
     y += 10;
   }  
@@ -579,8 +593,10 @@ void notifications_display(){
     display.setCursor(0, y);
     if (bad_light > 0) {
       display.printf("dry soil ~ %d days", bad_moist);
+      bot.sendMessage(CHAT_ID, "The soil of the plant is dry!!", "");
     } else {
-      display.printf("overwatered ~ %d days", -bad_moist);      
+      display.printf("overwatered ~ %d days", -bad_moist);
+      bot.sendMessage(CHAT_ID, "The soil moisture is high!!", "");       
     }
     y += 10;
   }  
@@ -589,8 +605,10 @@ void notifications_display(){
     display.setCursor(0, y);
     if (bad_temp > 0) {
       display.printf("too cold ~ %d days", bad_temp);
+      bot.sendMessage(CHAT_ID, "Temeperature is too cool!! Move plant to warmer location.", "");
     } else {
-      display.printf("too hot ~ %d days", -bad_temp);      
+      display.printf("too hot ~ %d days", -bad_temp);
+      bot.sendMessage(CHAT_ID, "Temeperature is too high!! Move plant to cooler location.", "");      
     }
     y += 10;
   }  
@@ -599,8 +617,10 @@ void notifications_display(){
     display.setCursor(0, y);
     if (bad_light > 0) {
       display.printf("too humid ~ %d days", bad_humid);
+      bot.sendMessage(CHAT_ID, "Humidity is high!! Move plant to better location.", "");
     } else {
-      display.printf("too arid ~ %d days", -bad_humid);      
+      display.printf("too arid ~ %d days", -bad_humid);
+      bot.sendMessage(CHAT_ID, "Humidity is low!! Move plant to better location.", "");      
     }
   }  
 }
@@ -846,8 +866,9 @@ void change_menu() {
 
 void update_website() {
     String jsonString = "";                           // create a JSON string for sending data to the client
-    StaticJsonDocument<200> doc;                      // create a JSON container
+    StaticJsonDocument<300> doc;                      // create a JSON container
     JsonObject object = doc.to<JsonObject>();         // create a JSON Object
+    
     // temperature 
     object["cur_temp_val"] = temp_reading;            
     object["avg_temp_val"] = avg_temp;
@@ -887,7 +908,7 @@ void webSocketEvent(byte num, WStype_t type, uint8_t * payload, size_t length) {
       break;
     case WStype_TEXT:                                 // if a client has sent data, then type == WStype_TEXT
       // try to decipher the JSON string received
-      StaticJsonDocument<200> doc;                    // create a JSON container
+      StaticJsonDocument<300> doc;                    // create a JSON container
       DeserializationError error = deserializeJson(doc, payload);
       if (error) {
         Serial.print(F("deserializeJson() failed: "));
