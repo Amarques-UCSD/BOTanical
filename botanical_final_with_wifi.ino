@@ -112,9 +112,10 @@ float press_reading = 0;
 float height_reading = 0;
 float humid_reading = 0;
 float water_level = 0;
+float water_level_percent = 0;
 
 // variables for calculation
-int cycle_length = 5;//4*24; // 24 * 4*15min delay = 1 day cycle
+int cycle_length = 4*24; // 24 * 4*15min delay = 1 day cycle
 int cur_unit = 0;      // for determining when to take readings
 int cur_cycle = 1;     // for the set of readings
 int unit_time = 100;   // 0.1s for cycles (good input responsitivity)
@@ -130,6 +131,7 @@ float exp_moist[2] = {2500, 2300}; // threshold for moisture
 float exp_temp[2] = {15, 25}; // average expected temperature
 float exp_humid[2] = {40, 60}; // average expected humidity
 float water_min = 1200; // minimum water that should be in container
+float water_max = 4000; // maximum water that can be in container
 float avg_light = 0;
 float avg_moist = 0;
 float avg_temp = 0;
@@ -184,24 +186,6 @@ UniversalTelegramBot bot(BOTtoken, client);
 void setup() {  // put your setup code here, to run once:
   Serial.begin(115200);
 
-  WiFi.begin(ssid, password);
-  Serial.println("Establishing connection to WiFi with SSID: " + String(ssid));
-
-  client.setCACert(TELEGRAM_CERTIFICATE_ROOT); // Add root certificate for api.telegram.org
-  
-  while (WiFi.status() != WL_CONNECTED) {             // wait until WiFi is connected
-    delay(2000);
-    Serial.print(".");
-    if(wifi_attempt >= 3) break;
-    wifi_attempt = wifi_attempt + 1;
-  }
-
-  if (WiFi.status() == WL_CONNECTED){
-    Serial.print("Connected to network with IP address: ");
-    Serial.println(WiFi.localIP());
-    bot.sendMessage(CHAT_ID, "Bot started up", "");
-  }  
-
   pinMode(LED, OUTPUT);   // configure pin as an OUTPUT
   pinMode(LIGHTSENSORPIN, INPUT);
   pinMode(SOILPIN, INPUT);
@@ -209,9 +193,11 @@ void setup() {  // put your setup code here, to run once:
   pinMode(WATERPIN, INPUT);
   pinMode(PUMP, OUTPUT);
 
+  digitalWrite(PUMP, LOW);      // turn pump OFF
+
   pinMode(BUTTON1, INPUT_PULLUP); // button 1 as internal pull-up resistor
   pinMode(BUTTON2, INPUT_PULLUP); // button 2 as internal pull-up resistor
-  pinMode(BUTTON3, INPUT_PULLUP); // button 3 as internal pull-up resistor
+  pinMode(BUTTON3, INPUT_PULLUP); // button 3 as internal pull-up resistor 
 
   // following for oled
   // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
@@ -239,6 +225,24 @@ void setup() {  // put your setup code here, to run once:
 
   // Clear the buffer
   display.clearDisplay();
+
+  WiFi.begin(ssid, password);
+  Serial.println("Establishing connection to WiFi with SSID: " + String(ssid));
+
+  client.setCACert(TELEGRAM_CERTIFICATE_ROOT); // Add root certificate for api.telegram.org
+  
+  while (WiFi.status() != WL_CONNECTED) {             // wait until WiFi is connected
+    delay(4000);
+    Serial.print(".");
+    if(wifi_attempt >= 3) break;
+    wifi_attempt = wifi_attempt + 1;
+  }
+
+  if (WiFi.status() == WL_CONNECTED){
+    Serial.print("Connected to network with IP address: ");
+    Serial.println(WiFi.localIP());
+    bot.sendMessage(CHAT_ID, "Bot started up", "");
+  } 
 
   if (!SPIFFS.begin()) {
     Serial.println("SPIFFS could not initialize");
@@ -300,10 +304,10 @@ void loop() { // put your main code here, to run repeatedly:
   display.setTextColor(WHITE);
   
   // show time
-  display.setCursor(75, 0);  
-  strftime_buf[19] = '\0';  // make sure to only print hh:mm:ss
-  display.println(&strftime_buf[11]);
-  display.drawRect(73, -10, 100, 20, WHITE);
+//  display.setCursor(75, 0);  
+//  strftime_buf[19] = '\0';  // make sure to only print hh:mm:ss
+//  display.println(&strftime_buf[11]);
+//  display.drawRect(73, -10, 100, 20, WHITE);
 
   switch(cur_state) {
     case 0:
@@ -363,22 +367,22 @@ void loop() { // put your main code here, to run repeatedly:
 
   if (cur_unit == unit_length || cur_unit == 0) {  // take readings
     sensor_readings();
+    if (wifi_attempt < 3){
+      update_website();
+   }
     cur_unit = 1;  
   } else {
     cur_unit++;
-    if (pump_on == 10) {  // 10 * 100ms = 1s of watering
+    if (pump_on == 30) {  // 30 * 100ms = 3s of watering
       digitalWrite(PUMP, LOW);      // turn pump OFF
     }
     pump_on++;
   }
 
-  if (wifi_attempt < 3){
-      update_website();
-    }
 
     // make time cycle constant
     unsigned long millis_now = millis();
-    delay(unit_time - (millis_now - previous_millis));
+    delay(unit_time);   //    delay(unit_time - (millis_now - previous_millis));
     previous_millis = millis();
 
   if (cur_cycle == cycle_length + 1) { // reset cycle
@@ -392,40 +396,48 @@ void loop() { // put your main code here, to run repeatedly:
 
     if (avg_light < exp_light[0]) {
       if (bad_light > 0) bad_light = -1;
-      else bad_light--; 
+      else bad_light--;
+      bot.sendMessage(CHAT_ID, "Your Plant needs more Sunlight!! Move it to better location.", "");
     } else if (avg_light > exp_light[1]) {
       if (bad_light < 0) bad_light = 1;
       else bad_light++;
+      bot.sendMessage(CHAT_ID, " Your Plant is receiving too much Sunlight!! Move it to cooler location.", "");
     } else {
       bad_light = 0;
     }
     
     if (avg_moist < exp_moist[0]) {
       if (bad_moist > 0) bad_moist = -1;
-      else bad_moist--; 
+      else bad_moist--;
+      bot.sendMessage(CHAT_ID, "The soil of the plant is dry!!", ""); 
     } else if (avg_moist > exp_moist[1]) {
       if (bad_moist < 0) bad_moist = 1;
       else bad_moist++;
+      bot.sendMessage(CHAT_ID, "The soil moisture is high!!", "");
     } else {
       bad_moist = 0;
     }    
     
     if (avg_temp < exp_temp[0]) {
       if (bad_temp > 0) bad_temp = -1;
-      else bad_temp--; 
+      else bad_temp--;
+      bot.sendMessage(CHAT_ID, "Temeperature is too cool!! Move plant to warmer location.", ""); 
     } else if (avg_temp > exp_temp[1]) {
       if (bad_temp < 0) bad_temp = 1;
       else bad_temp++;
+      bot.sendMessage(CHAT_ID, "Temeperature is too high!! Move plant to cooler location.", "");
     } else {
       bad_temp = 0;
     }
     
     if (avg_humid < exp_humid[0]) {
       if (bad_humid > 0) bad_humid = -1;
-      else bad_humid--; 
+      else bad_humid--;
+      bot.sendMessage(CHAT_ID, "Humidity is low!! Move plant to better location.", ""); 
     } else if (avg_humid > exp_humid[1]) {
       if (bad_humid < 0) bad_humid = 1;
       else bad_humid++;
+      bot.sendMessage(CHAT_ID, "Humidity is high!! Move plant to better location.", "");
     } else {
       bad_humid = 0;
     }    
@@ -449,6 +461,10 @@ void sensor_readings() {
   digitalWrite(WATERPOWER, HIGH);  // turn the sensor ON
   delay(10);                      // wait 10 milliseconds
   water_level = analogRead(WATERPIN); // read the analog value from sensor
+  water_level_percent = ((water_level - water_min) / (water_max - water_min))*100;
+  if (water_level_percent < 0){
+    water_level_percent = 0;
+  }
   digitalWrite(WATERPOWER, LOW);   // turn the sensor OFF
 
   // Moisture sensor
@@ -573,7 +589,6 @@ void notifications_display(){
   if (water_level < water_min) {
     display.setCursor(0, y);
     display.println(" LOW - Refill water");
-    bot.sendMessage(CHAT_ID, "Water Container Empty. Please refill water!!", "");
     y += 10;
   }
 
@@ -581,10 +596,8 @@ void notifications_display(){
     display.setCursor(0, y);
     if (bad_light > 0) {
       display.printf("strong light ~ %d days", bad_light);
-      bot.sendMessage(CHAT_ID, " Your Plant is receiving too much Sunlight!! Move it to cooler location.", "");
     } else {
-      display.printf("weak light ~ %d days", -bad_light);
-      bot.sendMessage(CHAT_ID, "Your Plant needs more Sunlight!! Move it to better location.", "");      
+      display.printf("weak light ~ %d days", -bad_light);      
     }
     y += 10;
   }  
@@ -593,10 +606,8 @@ void notifications_display(){
     display.setCursor(0, y);
     if (bad_light > 0) {
       display.printf("dry soil ~ %d days", bad_moist);
-      bot.sendMessage(CHAT_ID, "The soil of the plant is dry!!", "");
     } else {
-      display.printf("overwatered ~ %d days", -bad_moist);
-      bot.sendMessage(CHAT_ID, "The soil moisture is high!!", "");       
+      display.printf("overwatered ~ %d days", -bad_moist);       
     }
     y += 10;
   }  
@@ -605,10 +616,8 @@ void notifications_display(){
     display.setCursor(0, y);
     if (bad_temp > 0) {
       display.printf("too cold ~ %d days", bad_temp);
-      bot.sendMessage(CHAT_ID, "Temeperature is too cool!! Move plant to warmer location.", "");
     } else {
-      display.printf("too hot ~ %d days", -bad_temp);
-      bot.sendMessage(CHAT_ID, "Temeperature is too high!! Move plant to cooler location.", "");      
+      display.printf("too hot ~ %d days", -bad_temp);      
     }
     y += 10;
   }  
@@ -617,10 +626,8 @@ void notifications_display(){
     display.setCursor(0, y);
     if (bad_light > 0) {
       display.printf("too humid ~ %d days", bad_humid);
-      bot.sendMessage(CHAT_ID, "Humidity is high!! Move plant to better location.", "");
     } else {
-      display.printf("too arid ~ %d days", -bad_humid);
-      bot.sendMessage(CHAT_ID, "Humidity is low!! Move plant to better location.", "");      
+      display.printf("too arid ~ %d days", -bad_humid);      
     }
   }  
 }
@@ -701,7 +708,7 @@ void light_data() {
   display.setCursor(0, 20);
   display.printf("Light = %d lux\n",(int) light_reading);
   display.printf("Avg value = %d\n",(int) avg_light);
-  display.printf("Cycle = %d / %d\n", (cur_cycle+3)%5+1, cycle_length);
+//  display.printf("Cycle = %d / %d\n", (cur_cycle+3)%5+1, cycle_length);
   display.printf("Expected :\n  %d ~ %d\n", (int) exp_light[0], (int) exp_light[1]);
 }
 
@@ -710,7 +717,7 @@ void moist_data() {
   display.setCursor(0, 20);
   display.printf("Moisture = %d\n",(int) moist_reading);
   display.printf("Avg value = %d\n",(int) avg_moist);
-  display.printf("Cycle = %d / %d\n", (cur_cycle+3)%5+1, cycle_length);
+//  display.printf("Cycle = %d / %d\n", (cur_cycle+3)%5+1, cycle_length);
   display.printf("Expected :\n  %d ~ %d\n", (int) exp_moist[0], (int) exp_moist[1]);
 }
 
@@ -719,7 +726,7 @@ void temp_data() {
   display.setCursor(0, 20);
   display.printf("Temperature = %d C\n", (int) temp_reading);
   display.printf("Avg value = %d\n", (int) avg_temp);
-  display.printf("Cycle = %d / %d\n", (cur_cycle+3)%5+1, cycle_length);
+//  display.printf("Cycle = %d / %d\n", (cur_cycle+3)%5+1, cycle_length);
   display.printf("Expected :\n  %d ~ %d\n", (int) exp_temp[0], (int) exp_temp[1]);
 }
 
@@ -728,7 +735,7 @@ void humid_data() {
   display.setCursor(0, 20);
   display.printf("Humidity = %d %%\n", (int) humid_reading);
   display.printf("Avg value = %d\n", (int) avg_humid);
-  display.printf("Cycle = %d / %d\n", (cur_cycle+3)%5+1, cycle_length);
+//  display.printf("Cycle = %d / %d\n", (cur_cycle+3)%5+1, cycle_length);
   display.printf("Expected :\n  %d ~ %d\n", (int) exp_humid[0], (int) exp_humid[1]);
 }
 
@@ -890,7 +897,7 @@ void update_website() {
     object["exp_min_moist_val"] = exp_moist[0];
     object["exp_max_moist_val"] = exp_moist[1]; 
     //water level
-    object["cur_water_level"] = water_level;
+    object["cur_water_level"] = water_level_percent;
     
     serializeJson(doc, jsonString);                   // convert JSON object to string
 //    Serial.println(jsonString);                     
