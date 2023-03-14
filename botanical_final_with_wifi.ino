@@ -115,11 +115,11 @@ float water_level = 0;
 float water_level_percent = 0;
 
 // variables for calculation
-int cycle_length = 4*24; // 24 * 4*15min delay = 1 day cycle
+int cycle_length = 5; //4*24; // 24 * 4*15min delay = 1 day cycle
 int cur_unit = 0;      // for determining when to take readings
 int cur_cycle = 1;     // for the set of readings
 int unit_time = 100;   // 0.1s for cycles (good input responsitivity)
-int sensor_sleep = 5000;//15*60*1000;  // 15 minutes -> ms
+int sensor_sleep = 10000;//15*60*1000;  // 15 minutes -> ms
 float unit_length = sensor_sleep / unit_time; // when to read? = 50
 unsigned long previous_millis = 2000; // 2s of setup
 int error_cycle = 0;
@@ -169,8 +169,8 @@ int cur3 = HIGH;
 int wifi_attempt = 0;
 
 // SSID and password of Wifi connection:
-const char* ssid = "";
-const char* password = "";
+const char* ssid = "Sahil_iPhone";
+const char* password = "botanical8";
 
 // Initialization of webserver and websocket
 AsyncWebServer server(80);
@@ -195,7 +195,7 @@ void setup() {  // put your setup code here, to run once:
 
   digitalWrite(PUMP, LOW);      // turn pump OFF
 
-  pinMode(BUTTON1, INPUT_PULLUP); // button 1 as internal pull-up resistor
+  pinMode(BUTTON1, INPUT_PULLUP); // button 1 as internal pull-up resistorcur
   pinMode(BUTTON2, INPUT_PULLUP); // button 2 as internal pull-up resistor
   pinMode(BUTTON3, INPUT_PULLUP); // button 3 as internal pull-up resistor 
 
@@ -304,10 +304,10 @@ void loop() { // put your main code here, to run repeatedly:
   display.setTextColor(WHITE);
   
   // show time
-//  display.setCursor(75, 0);  
-//  strftime_buf[19] = '\0';  // make sure to only print hh:mm:ss
-//  display.println(&strftime_buf[11]);
-//  display.drawRect(73, -10, 100, 20, WHITE);
+  display.setCursor(75, 0);  
+  strftime_buf[19] = '\0';  // make sure to only print hh:mm:ss
+  display.println(&strftime_buf[11]);
+  display.drawRect(73, -10, 100, 20, WHITE);
 
   switch(cur_state) {
     case 0:
@@ -365,7 +365,7 @@ void loop() { // put your main code here, to run repeatedly:
 
   webSocket.loop();
 
-  if (cur_unit == unit_length || cur_unit == 0) {  // take readings
+  if (cur_unit >= unit_length || cur_unit == 0) {  // take readings
     sensor_readings();
     if (wifi_attempt < 3){
       update_website();
@@ -382,8 +382,12 @@ void loop() { // put your main code here, to run repeatedly:
 
     // make time cycle constant
     unsigned long millis_now = millis();
-    delay(unit_time);   //    delay(unit_time - (millis_now - previous_millis));
+    Serial.printf("Current time = %d , last %d , unit = %d | diff = %d , delay = %d , skipped = %d\n", millis_now, previous_millis, cur_unit, millis_now - previous_millis, (millis_now - previous_millis)%unit_time, (millis_now - previous_millis)/unit_time);
+    cur_unit += (millis_now - previous_millis)/unit_time; // notifications skip over some cycles
+    delay(unit_time - (millis_now - previous_millis)%unit_time);   //    delay(unit_time - (millis_now - previous_millis));
     previous_millis = millis();
+    if (previous_millis%unit_time != 0) // fix small drift
+      previous_millis = previous_millis + (unit_time - previous_millis%unit_time);
 
   if (cur_cycle == cycle_length + 1) { // reset cycle
     cur_cycle = 1;
@@ -604,7 +608,7 @@ void notifications_display(){
 
   if (bad_moist != 0) {
     display.setCursor(0, y);
-    if (bad_light > 0) {
+    if (bad_moist > 0) {
       display.printf("dry soil ~ %d days", bad_moist);
     } else {
       display.printf("overwatered ~ %d days", -bad_moist);       
