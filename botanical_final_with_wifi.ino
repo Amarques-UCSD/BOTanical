@@ -386,8 +386,15 @@ void loop() { // put your main code here, to run repeatedly:
     cur_unit += (millis_now - previous_millis)/unit_time; // notifications skip over some cycles
     delay(unit_time - (millis_now - previous_millis)%unit_time);   //    delay(unit_time - (millis_now - previous_millis));
     previous_millis = millis();
-    if (previous_millis%unit_time != 0) // fix small drift
-      previous_millis = previous_millis + (unit_time - previous_millis%unit_time);
+    if (previous_millis%unit_time != 0) { // fix small drift
+      if (previous_millis%unit_time < unit_time/2)  {
+        //Serial.printf("Fixed drift, old time = %d , new = %d\n",previous_millis, previous_millis - previous_millis%unit_time);
+        previous_millis = previous_millis - previous_millis%unit_time;
+      } else {
+        //Serial.printf("Fixed drift, old time = %d , new = %d\n",previous_millis, previous_millis + (unit_time - previous_millis%unit_time));
+        previous_millis = previous_millis + (unit_time - previous_millis%unit_time);   
+      }
+    }
 
   if (cur_cycle == cycle_length + 1) { // reset cycle
     cur_cycle = 1;
