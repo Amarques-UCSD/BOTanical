@@ -241,7 +241,7 @@ void setup() {  // put your setup code here, to run once:
   if (WiFi.status() == WL_CONNECTED){
     Serial.print("Connected to network with IP address: ");
     Serial.println(WiFi.localIP());
-    bot.sendMessage(CHAT_ID, "Bot started up", "");
+    bot.sendMessage(CHAT_ID, "BOTanical started up, detailed readings at: 192.168.1.80", "");
   } 
 
   if (!SPIFFS.begin()) {
@@ -382,7 +382,7 @@ void loop() { // put your main code here, to run repeatedly:
 
     // make time cycle constant
     unsigned long millis_now = millis();
-    Serial.printf("Current time = %d , last %d , unit = %d | diff = %d , delay = %d , skipped = %d\n", millis_now, previous_millis, cur_unit, millis_now - previous_millis, (millis_now - previous_millis)%unit_time, (millis_now - previous_millis)/unit_time);
+    //Serial.printf("Current time = %d , last %d , unit = %d | diff = %d , delay = %d , skipped = %d\n", millis_now, previous_millis, cur_unit, millis_now - previous_millis, (millis_now - previous_millis)%unit_time, (millis_now - previous_millis)/unit_time);
     cur_unit += (millis_now - previous_millis)/unit_time; // notifications skip over some cycles
     delay(unit_time - (millis_now - previous_millis)%unit_time);   //    delay(unit_time - (millis_now - previous_millis));
     previous_millis = millis();
@@ -398,53 +398,66 @@ void loop() { // put your main code here, to run repeatedly:
     past_temp = avg_temp;
     past_humid = avg_humid;
 
+    String notif_s = "";
+    int notif_i = 5;  
+
+    if (water_level < water_min) 
+      notif_s += "Container LOW - Refill water\n";
+    else notif_i--;
+  
     if (avg_light < exp_light[0]) {
       if (bad_light > 0) bad_light = -1;
       else bad_light--;
-      bot.sendMessage(CHAT_ID, "Your Plant needs more Sunlight!! Move it to better location.", "");
+      notif_s += "Your Plant needs more Sunlight!! Move it to better location.\n";
     } else if (avg_light > exp_light[1]) {
       if (bad_light < 0) bad_light = 1;
       else bad_light++;
-      bot.sendMessage(CHAT_ID, " Your Plant is receiving too much Sunlight!! Move it to cooler location.", "");
+      notif_s += "Your Plant is receiving too much Sunlight!! Move it to cooler location.\n";
     } else {
       bad_light = 0;
+      notif_i--;
     }
     
     if (avg_moist < exp_moist[0]) {
       if (bad_moist > 0) bad_moist = -1;
       else bad_moist--;
-      bot.sendMessage(CHAT_ID, "The soil of the plant is dry!!", ""); 
+      notif_s += "The soil of the plant is dry!!\n";
     } else if (avg_moist > exp_moist[1]) {
       if (bad_moist < 0) bad_moist = 1;
       else bad_moist++;
-      bot.sendMessage(CHAT_ID, "The soil moisture is high!!", "");
+      notif_s += "The soil moisture is high!!\n";
     } else {
       bad_moist = 0;
+      notif_i--;
     }    
     
     if (avg_temp < exp_temp[0]) {
       if (bad_temp > 0) bad_temp = -1;
       else bad_temp--;
-      bot.sendMessage(CHAT_ID, "Temeperature is too cool!! Move plant to warmer location.", ""); 
+      notif_s += "Temperature is too low!! Move plant to warmer location.\n";
     } else if (avg_temp > exp_temp[1]) {
       if (bad_temp < 0) bad_temp = 1;
       else bad_temp++;
-      bot.sendMessage(CHAT_ID, "Temeperature is too high!! Move plant to cooler location.", "");
+      notif_s += "Temperature is too high!! Move plant to cooler location.\n";
     } else {
       bad_temp = 0;
+      notif_i--;
     }
     
     if (avg_humid < exp_humid[0]) {
       if (bad_humid > 0) bad_humid = -1;
       else bad_humid--;
-      bot.sendMessage(CHAT_ID, "Humidity is low!! Move plant to better location.", ""); 
+      notif_s += "Humidity is low!! Move plant to better location.";
     } else if (avg_humid > exp_humid[1]) {
       if (bad_humid < 0) bad_humid = 1;
       else bad_humid++;
-      bot.sendMessage(CHAT_ID, "Humidity is high!! Move plant to better location.", "");
+      notif_s += "Humidity is high!! Move plant to better location.";
     } else {
       bad_humid = 0;
+      notif_i--;
     }    
+
+    if (notif_i) bot.sendMessage(CHAT_ID, notif_s, "");
   }
 }
 
