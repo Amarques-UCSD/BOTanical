@@ -104,6 +104,46 @@ static const unsigned char PROGMEM BOTanical_logo[] = { // bitmap variable
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
 };
 
+// WIFI inputs
+int state_WIFI = 0;
+const char* input1 = "SSID_toconnect";
+const char* input2 = "PASS_toconnect";
+const char* input3 = "GO_toconnect";
+const char* input4 = "Telegram_ID";
+String SSID_toconnect = "";
+String PASS_toconnect = "";
+String GO_toconnect = "";
+String Telegram_ID = "";
+int SSID_len = 0;
+int PASS_len = 0;
+int tele_len = 0;
+
+// HTML web page to handle 4 input fields
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html><head>
+  <title>ESP Input Form</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  </head><body>
+  <form action="/get">
+    WIFI name:     <input type="text" name="input1", value="">
+    <input type="submit" value="Submit">
+  </form><br>
+  <form action="/get">
+    WIFI password: <input type="text" name="input2">
+    <input type="submit" value="Submit">
+  </form><br>
+  <form action="/get">
+    Connect: (y/n) <input type="text" name="input3">
+    <input type="submit" value="Submit">
+  </form><br>
+  <form action="/get">
+    Telegram ID: <input type="text" name="input4">
+    <input type="submit" value="Submit">
+  </form><br>
+  <p>After inputing all the details and hitting go, the BOTanical Device wifi will close and BOTanical will connect to the inputed WIFI.</p>
+  <p>When it is connected to the wifi it will host its own website. The IP will be send through telegram, but can also be found under the "Sensor Readings" menu.</p>
+</body></html>)rawliteral";
+
 // variables to store readings
 float light_reading = 0;
 float moist_reading = 0;
@@ -122,6 +162,7 @@ int unit_time = 100;   // 0.1s for cycles (good input responsitivity)
 int sensor_sleep = 10000;//15*60*1000;  // 15 minutes -> ms
 float unit_length = sensor_sleep / unit_time; // when to read? = 50
 unsigned long previous_millis = 2000; // 2s of setup
+unsigned long millis_now;
 int error_cycle = 0;
 
 float moist_air = 3000; // initial reading of soil ~2300 when taking pics
@@ -169,16 +210,16 @@ int cur3 = HIGH;
 int wifi_attempt = 0;
 
 // SSID and password of Wifi connection:
-const char* ssid = "Sahil_iPhone";
-const char* password = "botanical8";
+const char* ssid = "Group8-BOTanical";
+const char* password = "BOTanical1demo";
 
 // Initialization of webserver and websocket
 AsyncWebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 
-// Initialize Telegram BOT
-#define BOTtoken ""
-#define CHAT_ID ""
+// Initialize Telegram BOT : @BOTanicalA_not
+#define BOTtoken "6254909708:AAFuLrc8xWwh1muIFPDD9-er7AuqZMpOAwM"
+#define CHAT_ID ""  // your ID
 
 WiFiClientSecure client;
 UniversalTelegramBot bot(BOTtoken, client);
@@ -234,14 +275,13 @@ void setup() {  // put your setup code here, to run once:
   while (WiFi.status() != WL_CONNECTED) {             // wait until WiFi is connected
     delay(4000);
     Serial.print(".");
-    if(wifi_attempt >= 3) break;
-    wifi_attempt = wifi_attempt + 1;
+    if(wifi_attempt++ >= 3) break;
   }
 
   if (WiFi.status() == WL_CONNECTED){
     Serial.print("Connected to network with IP address: ");
     Serial.println(WiFi.localIP());
-    bot.sendMessage(CHAT_ID, "BOTanical started up, detailed readings at: 192.168.1.80", "");
+    bot.sendMessage(CHAT_ID, "BOTanical started up, detailed readings at: " + WiFi.localIP().toString(), "");
   } 
 
   if (!SPIFFS.begin()) {
@@ -304,10 +344,10 @@ void loop() { // put your main code here, to run repeatedly:
   display.setTextColor(WHITE);
   
   // show time
-  display.setCursor(75, 0);  
+/*  display.setCursor(75, 0);  
   strftime_buf[19] = '\0';  // make sure to only print hh:mm:ss
   display.println(&strftime_buf[11]);
-  display.drawRect(73, -10, 100, 20, WHITE);
+  display.drawRect(73, -10, 100, 20, WHITE);*/
 
   switch(cur_state) {
     case 0:
@@ -381,7 +421,7 @@ void loop() { // put your main code here, to run repeatedly:
 
 
     // make time cycle constant
-    unsigned long millis_now = millis();
+    millis_now = millis();
     //Serial.printf("Current time = %d , last %d , unit = %d | diff = %d , delay = %d , skipped = %d\n", millis_now, previous_millis, cur_unit, millis_now - previous_millis, (millis_now - previous_millis)%unit_time, (millis_now - previous_millis)/unit_time);
     cur_unit += (millis_now - previous_millis)/unit_time; // notifications skip over some cycles
     delay(unit_time - (millis_now - previous_millis)%unit_time);   //    delay(unit_time - (millis_now - previous_millis));
@@ -582,7 +622,7 @@ void overview_display(){
 void sensors_display() {
   // Display static text
   display.setCursor(0, 0);
-  display.println("Options:");
+  display.println(WiFi.localIP().toString());
 
   // show menu
   char* menu_text[menu_len] = {"Light Sensor", "Moisture Sensor", "Temperature sensor", "Humidity sensor", "Back"};
